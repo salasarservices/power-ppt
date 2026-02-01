@@ -1,330 +1,328 @@
 # app.py
 import io
-from typing import List, Tuple, Optional
+import json
+import os
+from typing import List, Dict, Optional
 
 import streamlit as st
 from pptx import Presentation
-from pptx.dml.color import RGBColor
-from pptx.enum.shapes import PP_PLACEHOLDER
-from pptx.util import Inches, Pt
 
-# Styling constants
+import pptx_reader
+import preprocessor
+import ocr_backend
+import paginator
+import template_filler
+import utils
+
+# Constants matching your requirements
 TITLE_FONT_NAME = "Poppins"
 BODY_FONT_NAME = "Poppins"
 TITLE_PX = 20
 BODY_PX = 12
-# Convert px to pt (approx): 1 px = 0.75 pt
-TITLE_PT = Pt(TITLE_PX * 0.75)
-BODY_PT = Pt(BODY_PX * 0.75)
-TITLE_COLOR = RGBColor(0x2d, 0x44, 0x8d)  # #2d448d
-BODY_COLOR = RGBColor(0x00, 0x00, 0x00)   # #000000
+DEFAULT_DPI = 300
+DEFAULT_CONTINUATION_SUFFIX = "(CONTD...)"
 
-# Default layout positions if template doesn't provide placeholders
-TITLE_LEFT = Inches(0.5)
-TITLE_TOP = Inches(0.3)
-TITLE_WIDTH = Inches(9.0)
-TITLE_HEIGHT = Inches(1.0)
+st.set_page_config(page_title="PPT Normalizer — Phase B (OCR)", layout="wide")
 
-BODY_LEFT = Inches(0.5)
-BODY_TOP = Inches(1.4)
-BODY_WIDTH = Inches(9.0)
-BODY_HEIGHT = Inches(5.0)
-
-# Pagination heuristic
-CHARS_PER_PAGE = 1100
-
-
-def extract_title_and_body(slide) -> Tuple[str, str]:
-    """
-    Extract title and body text heuristically:
-    - Prefer TITLE placeholder for title.
-    - For body, gather text from other text shapes excluding footers/date/slide number and the title shape.
-    """
-    title = ""
-    # Try to find placeholder title
-    for shape in slide.shapes:
-        if not getattr(shape, "has_text_frame", False):
-            continue
-        try:
-            if shape.is_placeholder and shape.placeholder_format.type in (
-                PP_PLACEHOLDER.TITLE,
-                PP_PLACEHOLDER.CENTER_TITLE,
-            ):
-                if shape.text.strip():
-                    title = shape.text.strip()
-                    break
-        except Exception:
-            pass
-
-    text_shapes = []
-    for shape in slide.shapes:
-        if not getattr(shape, "has_text_frame", False):
-            continue
-        try:
-            if shape.is_placeholder and shape.placeholder_format.type in (
-                PP_PLACEHOLDER.SLIDE_NUMBER,
-                PP_PLACEHOLDER.FOOTER,
-                PP_PLACEHOLDER.DATE,
-            ):
-                continue
-        except Exception:
-            pass
-        text = shape.text.strip()
-        if not text:
-            continue
-        # Skip the title shape if we've captured title
-        if title and text == title:
-            continue
-        text_shapes.append(text)
-
-    # If no title found, use first shape's first non-empty line
-    if not title:
-        if text_shapes:
-            first = text_shapes.pop(0)
-            lines = [l for l in first.splitlines() if l.strip()]
-            if lines:
-                title = lines[0].strip()
-                rest = "\n".join(lines[1:]).strip()
-                if rest:
-                    text_shapes.insert(0, rest)
-        else:
-            title = "Untitled"
-
-    body = "\n\n".join(text_shapes).strip()
-    return title, body
-
-
-def split_text_into_pages(text: str, chars_per_page: int = CHARS_PER_PAGE) -> List[str]:
-    """
-    Split the body text into pages preserving paragraph boundaries.
-    """
-    if not text:
-        return [""]
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-    pages = []
-    current = ""
-    for p in paragraphs:
-        if current and (len(current) + len(p) + 2) > chars_per_page:
-            pages.append(current.strip())
-            current = p
-        else:
-            if current:
-                current += "\n\n" + p
-            else:
-                current = p
-    if current.strip():
-        pages.append(current.strip())
-    if not pages:
-        pages = [""]
-    return pages
-
-
-def clear_all_slides(prs: Presentation):
-    """
-    Remove all slides from a Presentation (keeps masters and layouts).
-    """
-    sldIdLst = prs.slides._sldIdLst  # pylint: disable=protected-access
-    for sldId in list(sldIdLst):
-        sldIdLst.remove(sldId)
-
-
-def find_layout_index_with_title_and_body(prs: Presentation) -> int:
-    """
-    Return index of a layout that has both title and body/content placeholders.
-    Fallback to 0.
-    """
-    for idx, layout in enumerate(prs.slide_layouts):
-        has_title = False
-        has_body = False
-        for ph in layout.placeholders:
-            try:
-                if ph.placeholder_format.type in (PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE):
-                    has_title = True
-                if ph.placeholder_format.type in (PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.CONTENT):
-                    has_body = True
-            except Exception:
-                pass
-        if has_title and has_body:
-            return idx
-    # fallback: try to pick layout that has a title
-    for idx, layout in enumerate(prs.slide_layouts):
-        for ph in layout.placeholders:
-            try:
-                if ph.placeholder_format.type in (PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE):
-                    return idx
-            except Exception:
-                pass
-    return 0
-
-
-def set_paragraph_font(paragraph, name: str, size: Pt, color: RGBColor, bold: bool = False):
-    for run in paragraph.runs:
-        run.font.name = name
-        run.font.size = size
-        run.font.color.rgb = color
-        run.font.bold = bold
-    # If paragraph has no runs (rare), set on paragraph level
-    if not paragraph.runs:
-        paragraph.font.name = name
-        paragraph.font.size = size
-        paragraph.font.color.rgb = color
-        paragraph.font.bold = bold
-
-
-def fill_slide_placeholders_with_title_and_body(slide, title_text: str, body_text: str) -> None:
-    """
-    Fill title and body placeholders on the slide if they exist.
-    If no appropriate placeholders exist, create textboxes as fallback.
-    """
-    title_filled = False
-    body_filled = False
-
-    # Try to fill placeholders
-    for shape in slide.shapes:
-        if not getattr(shape, "has_text_frame", False):
-            continue
-        try:
-            if shape.is_placeholder:
-                ph_type = shape.placeholder_format.type
-                if ph_type in (PP_PLACEHOLDER.TITLE, PP_PLACEHOLDER.CENTER_TITLE) and not title_filled:
-                    shape.text_frame.clear()
-                    p = shape.text_frame.paragraphs[0]
-                    p.text = title_text
-                    set_paragraph_font(p, TITLE_FONT_NAME, TITLE_PT, TITLE_COLOR, bold=True)
-                    title_filled = True
-                elif ph_type in (PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.CONTENT) and not body_filled:
-                    # Clear and populate paragraphs
-                    tf = shape.text_frame
-                    tf.clear()
-                    paragraphs = [p.strip() for p in body_text.split("\n\n") if p.strip()]
-                    for i, para in enumerate(paragraphs):
-                        p = tf.add_paragraph() if i > 0 else tf.paragraphs[0]
-                        # preserve simple bullet markers like "- " or "* "
-                        if para.startswith("- ") or para.startswith("* "):
-                            p.text = para[2:].strip()
-                            p.level = 0
-                        else:
-                            p.text = para
-                        set_paragraph_font(p, BODY_FONT_NAME, BODY_PT, BODY_COLOR, bold=False)
-                    body_filled = True
-        except Exception:
-            # If any placeholder access error occurs, skip this shape
-            pass
-
-    # Fallbacks: if placeholders not filled, create textboxes at default positions
-    if not title_filled:
-        title_box = slide.shapes.add_textbox(TITLE_LEFT, TITLE_TOP, TITLE_WIDTH, TITLE_HEIGHT)
-        tf_title = title_box.text_frame
-        tf_title.clear()
-        p = tf_title.paragraphs[0]
-        p.text = title_text
-        set_paragraph_font(p, TITLE_FONT_NAME, TITLE_PT, TITLE_COLOR, bold=True)
-
-    if not body_filled:
-        body_box = slide.shapes.add_textbox(BODY_LEFT, BODY_TOP, BODY_WIDTH, BODY_HEIGHT)
-        tf_body = body_box.text_frame
-        tf_body.clear()
-        paragraphs = [p.strip() for p in body_text.split("\n\n") if p.strip()]
-        for i, para in enumerate(paragraphs):
-            p = tf_body.add_paragraph() if i > 0 else tf_body.paragraphs[0]
-            if para.startswith("- ") or para.startswith("* "):
-                p.text = para[2:].strip()
-                p.level = 0
-            else:
-                p.text = para
-            set_paragraph_font(p, BODY_FONT_NAME, BODY_PT, BODY_COLOR, bold=False)
-
-
-def process_pptx_bytes(input_bytes: bytes, template_bytes: Optional[bytes] = None) -> bytes:
-    """
-    Process input presentation and produce a standardized presentation.
-    If template_bytes is provided, use that template's slide layouts/backgrounds.
-    Otherwise, use a default blank layout and textboxes.
-    """
-    in_prs = Presentation(io.BytesIO(input_bytes))
-
-    if template_bytes:
-        out_prs = Presentation(io.BytesIO(template_bytes))
-        # Clear any existing slides from template so we can add fresh ones while preserving masters/layouts
-        clear_all_slides(out_prs)
-        layout_idx = find_layout_index_with_title_and_body(out_prs)
-        use_template = True
-    else:
-        out_prs = Presentation()
-        layout_idx = None
-        use_template = False
-        # Ensure output size matches input for consistent aspect ratio
-        out_prs.slide_width = in_prs.slide_width
-        out_prs.slide_height = in_prs.slide_height
-
-    for slide in in_prs.slides:
-        title, body = extract_title_and_body(slide)
-        if not body:
-            pages = [""]
-        else:
-            pages = split_text_into_pages(body)
-        for i, page_text in enumerate(pages):
-            page_title = title if i == 0 else f"{title} (cont.)"
-            if use_template:
-                new_slide = out_prs.slides.add_slide(out_prs.slide_layouts[layout_idx])
-                fill_slide_placeholders_with_title_and_body(new_slide, page_title, page_text)
-            else:
-                # create blank slide and add textboxes
-                blank_layout = out_prs.slide_layouts[6] if len(out_prs.slide_layouts) > 6 else out_prs.slide_layouts[0]
-                new_slide = out_prs.slides.add_slide(blank_layout)
-                fill_slide_placeholders_with_title_and_body(new_slide, page_title, page_text)
-
-    out_stream = io.BytesIO()
-    out_prs.save(out_stream)
-    return out_stream.getvalue()
-
-
-# Streamlit UI
-st.set_page_config(page_title="PPT Normalizer — Template Upload", layout="centered")
-st.title("PPT Normalizer — Use a Runtime Template")
-
+st.title("PPT Normalizer — Phase B (MVP + OCR)")
 st.markdown(
     """
-Upload an input PowerPoint (.pptx) and optionally upload a standardized template (.pptx).
-The app will extract each slide's Title and main Body content from the input and place them into the template's slide layout (preserving background and placeholders).
-- Title: Poppins (Semibold), 20 px, color #2d448d
-- Body: Poppins (Regular), 12 px, color #000000
-
-If the template is not provided, a simple standardized layout is used instead.
-
-Notes:
-- python-pptx does not embed fonts. To see Poppins exactly, ensure Poppins is installed on the machine that opens the final PPTX.
-- The app extracts only textual content (title + body). Complex objects (charts, images, tables) are not transferred.
+Upload an input PPTX and optionally upload a standard template. The app will:
+- Extract Title + Body from slides (prefer pptx text shapes).
+- If body is missing and 'Use OCR on images' is enabled, OCR embedded images (Google Vision by default).
+- Provide a per-slide editable preview.
+- Paginate using paragraph heuristics or precise font-based pagination if you upload Poppins TTF.
+- Fill your runtime template (preserving background) and produce a standardized PPTX you can download.
 """
 )
 
+# ---- Sidebar controls ----
+with st.sidebar:
+    st.header("Processing Options")
+    use_ocr = st.checkbox("Use OCR on images (may be slower / cost money)", value=True)
+    ocr_backend_choice = st.selectbox("OCR backend", ["google_vision", "tesseract"], index=0)
+    ocr_scope = st.selectbox(
+        "OCR scope",
+        ["Only when text-shapes missing/ambiguous", "Always (process all slides)"],
+        index=0,
+    )
+    dpi = st.number_input("Rasterization DPI (for measurement)", value=DEFAULT_DPI, min_value=72, max_value=600)
+    continuation_style = st.text_input("Continuation suffix (default)", value=DEFAULT_CONTINUATION_SUFFIX)
+    paragraph_chars_per_page = st.number_input("Chars per page (heuristic pagination)", value=1100, min_value=200)
+
+    st.markdown("---")
+    st.markdown("Google Vision credentials")
+    st.markdown(
+        "Add your service account JSON to Streamlit Secrets (key: GOOGLE_SERVICE_ACCOUNT_JSON) for production.\n"
+        "Or upload a service-account JSON here for this session (it will not be persisted)."
+    )
+    uploaded_gcs_json = st.file_uploader("Upload Google service account JSON (session only)", type=["json"])
+
+# ---- Main UI: Uploaders ----
 col1, col2 = st.columns(2)
 with col1:
-    uploaded_file = st.file_uploader("Upload the input .pptx file", type=["pptx"])
+    input_ppt = st.file_uploader("Upload input .pptx", type=["pptx"])
 with col2:
-    template_file = st.file_uploader("Upload standardized template (.pptx) — optional", type=["pptx"])
+    template_ppt = st.file_uploader("Upload template .pptx (optional)", type=["pptx"])
 
-if uploaded_file is not None:
-    input_bytes = uploaded_file.read()
-    template_bytes = template_file.read() if template_file is not None else None
-    st.info("Processing uploaded PPTX...")
+poppins_ttf = st.file_uploader("Upload Poppins .ttf (optional — improves pagination)", type=["ttf", "otf"])
+
+# Persist session state containers
+if "slides_meta" not in st.session_state:
+    st.session_state["slides_meta"] = []
+if "titles" not in st.session_state:
+    st.session_state["titles"] = {}
+if "bodies" not in st.session_state:
+    st.session_state["bodies"] = {}
+
+# Setup Google Vision client if requested
+google_credentials_json = None
+if uploaded_gcs_json is not None:
+    google_credentials_json = uploaded_gcs_json.read().decode("utf-8")
+else:
+    # Check Streamlit secrets
+    if st.secrets and "GOOGLE_SERVICE_ACCOUNT_JSON" in st.secrets:
+        google_credentials_json = st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"]
+
+if ocr_backend_choice == "google_vision":
     try:
-        output_bytes = process_pptx_bytes(input_bytes, template_bytes=template_bytes)
-        st.success("Processed successfully.")
-        st.download_button(
-            label="Download standardized PPTX",
-            data=output_bytes,
-            file_name=f"standardized_{uploaded_file.name}",
-            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
-        )
-        st.markdown(
-            """
-Notes:
-- The app sets fonts to 'Poppins' on the text elements. To see exact typography, ensure Poppins is installed on the target machine.
-- If you want the app to use a specific slide index or layout from your template, tell me and I can add an input option to pick which template layout to use.
-"""
+        ocr_backend.init_google_vision(google_credentials_json)
+        st.sidebar.success("Google Vision initialized (if credentials provided).")
+    except Exception as e:
+        st.sidebar.warning("Google Vision init failed or no credentials provided; will fallback to Tesseract if selected.")
+        st.sidebar.write(e)
+
+
+def analyze_and_preview():
+    """
+    Extract text shapes from pptx. If allowed and needed, run OCR on embedded images.
+    Populate session_state['slides_meta'] and session_state['titles']/['bodies'].
+    """
+    if input_ppt is None:
+        st.warning("Please upload an input .pptx file first.")
+        return
+
+    input_bytes = input_ppt.read()
+    slides_meta = pptx_reader.extract_text_shapes(input_bytes)
+
+    # For each slide, determine title/body; if missing body and OCR allowed, run OCR on image shapes
+    for meta in slides_meta:
+        slide_idx = meta["slide_index"]
+        title = ""
+        body = ""
+
+        # Prefer placeholder title, else first shape line
+        if meta.get("title_text"):
+            title = meta["title_text"]
+        else:
+            # If there are any text shapes, take first non-empty line as title
+            if meta.get("text_shapes"):
+                first_text = meta["text_shapes"][0]["text"].strip()
+                first_line = first_text.splitlines()[0].strip() if first_text else ""
+                title = first_line or f"Slide {slide_idx + 1}"
+                # Remaining lines go to body if present
+                remainder = "\n".join(first_text.splitlines()[1:]).strip()
+                if remainder:
+                    body = remainder
+
+        # Compose body from text shapes (excluding the title shape)
+        if meta.get("text_shapes"):
+            # Combine all text shapes except the one used as title
+            body_parts = []
+            for s in meta["text_shapes"]:
+                txt = s["text"].strip()
+                if not txt:
+                    continue
+                # Skip if exact match with title
+                if title and txt == title:
+                    continue
+                body_parts.append(txt)
+            if body_parts:
+                body = "\n\n".join(body_parts).strip()
+
+        # Decide if OCR is needed
+        needs_ocr = False
+        if ocr_scope.startswith("Only") and (not body or len(body) < 20):
+            needs_ocr = True
+        elif ocr_scope.startswith("Always"):
+            needs_ocr = True
+
+        ocr_text = ""
+        if use_ocr and needs_ocr:
+            # OCR embedded image shapes first
+            image_shapes = meta.get("image_shapes", [])
+            ocr_texts = []
+            for img_meta in image_shapes:
+                img_bytes = img_meta.get("image_bytes")
+                if not img_bytes:
+                    continue
+                # preprocess
+                try:
+                    img_bytes_proc = preprocessor.preprocess_image(img_bytes, dpi=dpi)
+                except Exception:
+                    img_bytes_proc = img_bytes
+                try:
+                    ocr_result = ocr_backend.ocr_image(img_bytes_proc, backend=ocr_backend_choice)
+                    if ocr_result and ocr_result.get("text"):
+                        ocr_texts.append(ocr_result["text"].strip())
+                except Exception as e:
+                    st.warning(f"OCR failed on a picture on slide {slide_idx+1}: {e}")
+            if ocr_texts:
+                ocr_text = "\n\n".join(ocr_texts)
+
+            # NOTE: full-slide rasterization is not implemented here due to environment constraints.
+            # If you want full-slide OCR, see README for instructions to enable slide->image conversion via LibreOffice or other tools.
+
+        # Merge OCR text into body if body empty or short
+        if (not body or len(body) < 20) and ocr_text:
+            body = (body + "\n\n" + ocr_text).strip() if body else ocr_text
+
+        # If still no body, set empty string
+        if not body:
+            body = ""
+
+        st.session_state["titles"][slide_idx] = title
+        st.session_state["bodies"][slide_idx] = body
+
+    st.session_state["slides_meta"] = slides_meta
+    st.success(f"Analyzed {len(slides_meta)} slides. Review & edit below.")
+
+
+def render_preview_and_edit():
+    """
+    Show per-slide preview with editable fields and allow per-slide OCR re-run on images.
+    """
+    slides_meta = st.session_state.get("slides_meta", [])
+    if not slides_meta:
+        st.info("No analysis available yet. Click 'Analyze & Preview' after uploading input PPTX.")
+        return
+
+    for meta in slides_meta:
+        idx = meta["slide_index"]
+        header = f"Slide {idx + 1}"
+        with st.expander(header, expanded=False):
+            title_key = f"title_{idx}"
+            body_key = f"body_{idx}"
+            current_title = st.session_state["titles"].get(idx, "")
+            current_body = st.session_state["bodies"].get(idx, "")
+
+            new_title = st.text_input(f"Title (Slide {idx+1})", value=current_title, key=title_key)
+            new_body = st.text_area(f"Body (Slide {idx+1})", value=current_body, height=200, key=body_key)
+
+            # Buttons for per-slide OCR re-run (images)
+            colA, colB = st.columns([1, 3])
+            with colA:
+                if st.button("Re-run OCR on images for this slide", key=f"ocr_rerun_{idx}"):
+                    img_shapes = meta.get("image_shapes", [])
+                    ocr_texts = []
+                    for img_meta in img_shapes:
+                        img_bytes = img_meta.get("image_bytes")
+                        if not img_bytes:
+                            continue
+                        try:
+                            img_bytes_proc = preprocessor.preprocess_image(img_bytes, dpi=dpi)
+                        except Exception:
+                            img_bytes_proc = img_bytes
+                        try:
+                            res = ocr_backend.ocr_image(img_bytes_proc, backend=ocr_backend_choice)
+                            if res and res.get("text"):
+                                ocr_texts.append(res["text"].strip())
+                        except Exception as e:
+                            st.warning(f"OCR failed on slide {idx+1} image: {e}")
+                    if ocr_texts:
+                        new_body = (new_body + "\n\n" + "\n\n".join(ocr_texts)).strip() if new_body else "\n\n".join(ocr_texts)
+                        st.session_state["bodies"][idx] = new_body
+                        st.success("OCR results appended to body for this slide.")
+                    else:
+                        st.info("No OCR text detected on images for this slide.")
+
+            with colB:
+                st.write("Preview of extracted content. Edit as needed before final generation.")
+
+            # Save edits back to session_state
+            st.session_state["titles"][idx] = new_title
+            st.session_state["bodies"][idx] = new_body
+
+
+def generate_and_download():
+    """
+    Build pages based on session_state titles & bodies, paginate, fill template (if any), and produce final pptx bytes.
+    """
+    slides_meta = st.session_state.get("slides_meta", [])
+    if not slides_meta:
+        st.warning("No slides to generate from. Run Analyze & Preview first.")
+        return
+
+    # Build pages list: for each slide, create 1..N pages
+    pages = []
+    for meta in slides_meta:
+        idx = meta["slide_index"]
+        title = st.session_state["titles"].get(idx, f"Slide {idx+1}")
+        body = st.session_state["bodies"].get(idx, "")
+
+        # Paginate using font metrics if TTF provided, else paragraph heuristic
+        if poppins_ttf is not None:
+            # Try precise pagination
+            try:
+                font_bytes = poppins_ttf.read()
+                pages_texts = paginator.split_by_font_metrics(
+                    body,
+                    font_bytes=font_bytes,
+                    box_width_px=None,  # will be inferred from template if possible
+                    box_height_px=None,
+                    font_size_px=BODY_PX,
+                    dpi=dpi,
+                )
+            except Exception as e:
+                st.warning(f"Precise pagination failed, falling back to heuristic: {e}")
+                pages_texts = paginator.split_by_paragraphs(body, chars_per_page=paragraph_chars_per_page)
+        else:
+            pages_texts = paginator.split_by_paragraphs(body, chars_per_page=paragraph_chars_per_page)
+
+        for i, page_text in enumerate(pages_texts):
+            page_title = title if i == 0 else f"{title} {continuation_style}"
+            pages.append({"title": page_title, "body": page_text})
+
+    # Fill template or use default
+    input_template_bytes = template_ppt.read() if template_ppt is not None else None
+    try:
+        out_bytes = template_filler.fill_template_with_pages(
+            template_bytes=input_template_bytes,
+            pages=pages,
+            title_font=TITLE_FONT_NAME,
+            body_font=BODY_FONT_NAME,
+            title_font_pt=None,
+            body_font_pt=None,
         )
     except Exception as e:
-        st.error(f"Error processing file: {e}")
-else:
-    st.info("Upload an input .pptx file to get started. You may also upload a template (.pptx) to control styling/background.")
+        st.error(f"Failed to generate PPTX: {e}")
+        return
+
+    st.success("Generated standardized PPTX.")
+    st.download_button(
+        label="Download standardized PPTX",
+        data=out_bytes,
+        file_name=f"standardized_{input_ppt.name if input_ppt is not None else 'output'}.pptx",
+        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    )
+
+# ---- Buttons ----
+colA, colB, colC = st.columns([1, 1, 1])
+with colA:
+    if st.button("Analyze & Preview"):
+        analyze_and_preview()
+with colB:
+    if st.button("Render Preview"):
+        render_preview_and_edit()
+with colC:
+    if st.button("Generate & Download"):
+        generate_and_download()
+
+st.markdown("---")
+st.markdown(
+    """
+Notes:
+- OCR currently operates on embedded images inside slides (common case for screenshots). Full-slide rasterization is not provided by default since converting PPTX slides to images often requires LibreOffice or other external tools on the host. If you need full-slide OCR, I can add optional conversion steps (requires LibreOffice or Windows PowerPoint automation) — tell me and I will add it.
+- For Google Vision, please add your service account JSON to Streamlit Secrets (key: GOOGLE_SERVICE_ACCOUNT_JSON) or upload it in the sidebar for a session.
+"""
+)
