@@ -27,7 +27,7 @@ st.title("PPT Normalizer — Phase B (MVP + OCR)")
 st.markdown(
     """
 Upload an input PPTX and optionally upload a standard template. The app will:
-- Extract Title + Body from slides (prefer pptx text shapes).
+- Extract Title + Body from slides (prefer PPTX text shapes).
 - If body is missing and 'Use OCR on images' is enabled, OCR embedded images (Google Vision by default).
 - Provide a per-slide editable preview.
 - Paginate using paragraph heuristics or precise font-based pagination if you upload Poppins TTF.
@@ -39,26 +39,27 @@ Upload an input PPTX and optionally upload a standard template. The app will:
 with st.sidebar:
     st.header("Processing Options")
     use_ocr = st.checkbox("Use OCR on images (may be slower / cost money)", value=True, key="use_ocr_checkbox")
-    ocr_backend_choice = st.selectbox("OCR backend", ["google_vision", "tesseract"], index=0)
+    ocr_backend_choice = st.selectbox("OCR backend", ["google_vision", "tesseract"], index=0, key="ocr_backend_choice")
     ocr_scope = st.selectbox(
         "OCR scope",
         ["Only when text-shapes missing/ambiguous", "Always (process all slides)"],
         index=0,
+        key="ocr_scope_select"
     )
     dpi = st.number_input("Rasterization DPI (for measurement)", value=DEFAULT_DPI, min_value=72, max_value=600, key="dpi_input")
     continuation_style = st.text_input("Continuation suffix (default)", value=DEFAULT_CONTINUATION_SUFFIX, key="cont_suffix_input")
-    paragraph_chars_per_page = st.number_input("Chars per page (heuristic pagination)", value=1100, min_value=200, key="chars_input")
+    paragraph_chars_per_page = st.number_input("Chars per page (heuristic pagination)", value=1100, min_value=200, key="chars_per_page_input")
 
     st.markdown("---")
 
-    # Determine Google Vision status
+    # Determine Google Vision Status
     google_vision_status = "INACTIVE"
     status_icon = "🔴"  # Red dot by default
     if st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON"):
         try:
             ocr_backend.init_google_vision(st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"])
             google_vision_status = "ACTIVE"
-            status_icon = "🟢"  # Green dot when initialized successfully
+            status_icon = "🟢"  # Green dot if initialized successfully
         except Exception as e:
             st.warning("Google Vision initialization failed. Check your service account credentials.")
 
@@ -96,78 +97,28 @@ def analyze_and_preview():
     input_bytes = input_ppt.read()
     slides_meta = pptx_reader.extract_text_shapes(input_bytes)
 
-    # For each slide, determine title/body; if missing body and OCR allowed, run OCR on image shapes
     for meta in slides_meta:
         slide_idx = meta["slide_index"]
         title = ""
         body = ""
-
-        # Prefer placeholder title, else first shape line
         if meta.get("title_text"):
             title = meta["title_text"]
         else:
-            # If there are any text shapes, take first non-empty line as title
             if meta.get("text_shapes"):
                 first_text = meta["text_shapes"][0]["text"].strip()
                 first_line = first_text.splitlines()[0].strip() if first_text else ""
                 title = first_line or f"Slide {slide_idx + 1}"
-                # Remaining lines go to body if present
                 remainder = "\n".join(first_text.splitlines()[1:]).strip()
                 if remainder:
                     body = remainder
 
-        # Compose body from text shapes (excluding the title shape)
         if meta.get("text_shapes"):
-            # Combine all text shapes except the one used as title
-            body_parts = []
-            for s in meta["text_shapes"]:
-                txt = s["text"].strip()
-                if not txt:
-                    continue
-                # Skip if exact match with title
-                if title and txt == title:
-                    continue
-                body_parts.append(txt)
+            body_parts = [
+                s["text"].strip() for s in meta["text_shapes"]
+                if s["text"].strip() and s["text"].strip() != title
+            ]
             if body_parts:
                 body = "\n\n".join(body_parts).strip()
-
-        # Decide if OCR is needed
-        needs_ocr = False
-        if ocr_scope.startswith("Only") and (not body or len(body) < 20):
-            needs_ocr = True
-        elif ocr_scope.startswith("Always"):
-            needs_ocr = True
-
-        ocr_text = ""
-        if use_ocr and needs_ocr:
-            # OCR embedded image shapes first
-            image_shapes = meta.get("image_shapes", [])
-            ocr_texts = []
-            for img_meta in image_shapes:
-                img_bytes = img_meta.get("image_bytes")
-                if not img_bytes:
-                    continue
-                # preprocess
-                try:
-                    img_bytes_proc = preprocessor.preprocess_image(img_bytes, dpi=dpi)
-                except Exception:
-                    img_bytes_proc = img_bytes
-                try:
-                    ocr_result = ocr_backend.ocr_image(img_bytes_proc, backend=ocr_backend_choice)
-                    if ocr_result and ocr_result.get("text"):
-                        ocr_texts.append(ocr_result["text"].strip())
-                except Exception as e:
-                    st.warning(f"OCR failed on a picture on slide {slide_idx+1}: tesseract is not installed or it's not in your PATH. See README file for more information.")
-            if ocr_texts:
-                ocr_text = "\n\n".join(ocr_texts)
-
-        # Merge OCR text into body if empty or short
-        if (not body or len(body) < 20) and ocr_text:
-            body = (body + "\n\n" + ocr_text).strip() if body else ocr_text
-
-        # If still no body, set empty string
-        if not body:
-            body = ""
 
         st.session_state["titles"][slide_idx] = title
         st.session_state["bodies"][slide_idx] = body
@@ -178,7 +129,7 @@ def analyze_and_preview():
 
 def render_preview_and_edit():
     """
-    Show per-slide preview with editable fields and allow per-slide OCR re-run on images.
+    Show per-slide preview with editable fields.
     """
     slides_meta = st.session_state.get("slides_meta", [])
     if not slides_meta:
@@ -209,13 +160,52 @@ def generate_and_download():
         st.warning("No slides to generate from. Run Analyze & Preview first.")
         return
 
-    # Placeholder implementation
-    st.success("Generated standardized PPTX.")
-    st.download_button(
-        label="Download standardized PPTX",
-        data=b"Placeholder content",
-        file_name="standardized_output.pptx"
-    )
+    slides_meta = st.session_state["slides_meta"]
+    pages = []
+    for meta in slides_meta:
+        slide_idx = meta["slide_index"]
+        title = st.session_state["titles"].get(slide_idx, f"Slide {slide_idx + 1}")
+        body = st.session_state["bodies"].get(slide_idx, "")
+
+        if poppins_ttf is not None:
+            font_bytes = poppins_ttf.read()
+            try:
+                pages_texts = paginator.split_by_font_metrics(
+                    body,
+                    font_bytes=font_bytes,
+                    box_width_px=None,
+                    box_height_px=None,
+                    font_size_px=BODY_PX,
+                    dpi=dpi,
+                )
+            except Exception as e:
+                st.warning(f"Precise pagination failed for slide {slide_idx+1}. Falling back to heuristic.")
+                pages_texts = paginator.split_by_paragraphs(body, chars_per_page=paragraph_chars_per_page)
+        else:
+            pages_texts = paginator.split_by_paragraphs(body, chars_per_page=paragraph_chars_per_page)
+
+        for i, page_text in enumerate(pages_texts):
+            page_title = title if i == 0 else f"{title} {continuation_style}"
+            pages.append({"title": page_title, "body": page_text})
+
+    template_bytes = template_ppt.read() if template_ppt else None
+
+    try:
+        pptx_output_bytes = template_filler.fill_template_with_pages(
+            template_bytes=template_bytes,
+            pages=pages,
+            title_font=TITLE_FONT_NAME,
+            body_font=BODY_FONT_NAME,
+        )
+        st.success("Generated standardized PPTX.")
+        st.download_button(
+            label="Download standardized PPTX",
+            data=pptx_output_bytes,
+            file_name=f"standardized_{input_ppt.name if input_ppt else 'output'}.pptx",
+            mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        )
+    except Exception as e:
+        st.error(f"Failed to generate PPTX: {e}")
 
 
 # ---- Main Actions ----
