@@ -107,7 +107,7 @@ def analyze_and_preview():
         body = ""
 
         # Extract title and body from text shapes
-        # (Use logic from previous placeholders for title and body extraction)
+        # (Use placeholder logic for title and body extraction)
 
         # Extract tables as editable structures
         for shape in meta.get("shapes", []):
@@ -163,7 +163,8 @@ def render_preview_and_edit():
 
 def generate_and_download():
     """
-    Generate final standardized PPTX and allow downloading the result.
+    Generate final standardized PPTX with extracted content (titles, bodies, and tables)
+    and allow downloading the resulting presentation.
     """
     if not st.session_state.get("slides_meta"):
         st.warning("No slides to generate from. Run Analyze & Preview first.")
@@ -172,35 +173,22 @@ def generate_and_download():
     slides_meta = st.session_state["slides_meta"]
     tables = st.session_state["tables"]
     pages = []
+
+    # Prepare and debug content before generating slides
     for meta in slides_meta:
         slide_idx = meta["slide_index"]
         title = st.session_state["titles"].get(slide_idx, f"Slide {slide_idx + 1}")
         body = st.session_state["bodies"].get(slide_idx, "")
+        pages.append({"title": title, "body": body})
+    
+    st.write("Pages Data:", pages)  # Debugging
+    st.write("Tables Data:", tables)  # Debugging
 
-        if poppins_ttf is not None:
-            font_bytes = poppins_ttf.read()
-            try:
-                pages_texts = paginator.split_by_font_metrics(
-                    body,
-                    font_bytes=font_bytes,
-                    box_width_px=None,
-                    box_height_px=None,
-                    font_size_px=BODY_PX,
-                    dpi=dpi,
-                )
-            except Exception as e:
-                st.warning(f"Precise pagination failed for slide {slide_idx+1}. Falling back to heuristic.")
-                pages_texts = paginator.split_by_paragraphs(body, chars_per_page=paragraph_chars_per_page)
-        else:
-            pages_texts = paginator.split_by_paragraphs(body, chars_per_page=paragraph_chars_per_page)
-
-        for i, page_text in enumerate(pages_texts):
-            page_title = title if i == 0 else f"{title} {continuation_style}"
-            pages.append({"title": page_title, "body": page_text})
-
+    # Check if there's a template
     template_bytes = template_ppt.read() if template_ppt else None
 
     try:
+        # Pass the extracted content and tables to the template filler
         pptx_output_bytes = template_filler.fill_template_with_pages(
             template_bytes=template_bytes,
             pages=pages,
@@ -208,6 +196,8 @@ def generate_and_download():
             title_font=TITLE_FONT_NAME,
             body_font=BODY_FONT_NAME,
         )
+
+        # Allow user to download the generated PowerPoint presentation
         st.success("Generated standardized PPTX.")
         st.download_button(
             label="Download standardized PPTX",
