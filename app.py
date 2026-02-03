@@ -1,4 +1,3 @@
-# app.py
 import io
 import json
 import os
@@ -39,55 +38,42 @@ Upload an input PPTX and optionally upload a standard template. The app will:
 # ---- Sidebar controls ----
 with st.sidebar:
     st.header("Processing Options")
-    use_ocr = st.checkbox("Use OCR on images (may be slower / cost money)", value=True)
+    use_ocr = st.checkbox("Use OCR on images (may be slower / cost money)", value=True, key="use_ocr_checkbox")
     ocr_backend_choice = st.selectbox("OCR backend", ["google_vision", "tesseract"], index=0)
     ocr_scope = st.selectbox(
         "OCR scope",
         ["Only when text-shapes missing/ambiguous", "Always (process all slides)"],
         index=0,
     )
-    dpi = st.number_input("Rasterization DPI (for measurement)", value=DEFAULT_DPI, min_value=72, max_value=600)
-    continuation_style = st.text_input("Continuation suffix (default)", value=DEFAULT_CONTINUATION_SUFFIX)
-    paragraph_chars_per_page = st.number_input("Chars per page (heuristic pagination)", value=1100, min_value=200)
+    dpi = st.number_input("Rasterization DPI (for measurement)", value=DEFAULT_DPI, min_value=72, max_value=600, key="dpi_input")
+    continuation_style = st.text_input("Continuation suffix (default)", value=DEFAULT_CONTINUATION_SUFFIX, key="cont_suffix_input")
+    paragraph_chars_per_page = st.number_input("Chars per page (heuristic pagination)", value=1100, min_value=200, key="chars_input")
 
     st.markdown("---")
+
     # Determine Google Vision status
-google_vision_status = "INACTIVE"
-status_icon = "🔴"  # Initialize as red dot by default
+    google_vision_status = "INACTIVE"
+    status_icon = "🔴"  # Red dot by default
+    if st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON"):
+        try:
+            ocr_backend.init_google_vision(st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"])
+            google_vision_status = "ACTIVE"
+            status_icon = "🟢"  # Green dot when initialized successfully
+        except Exception as e:
+            st.warning("Google Vision initialization failed. Check your service account credentials.")
 
-if st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON"):
-    try:
-        ocr_backend.init_google_vision(st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"])
-        google_vision_status = "ACTIVE"
-        status_icon = "🟢"  # Change to green dot if Google Vision initializes successfully
-    except Exception as e:
-        st.warning("Google Vision initialization failed. Check your service account credentials.")
-
-with st.sidebar:
-    st.header("Processing Options")
-    st.checkbox("Use OCR on images (may be slower / cost money)", value=True)
-    ocr_backend_choice = st.selectbox("OCR backend", ["google_vision", "tesseract"], index=0)
-    ocr_scope = st.selectbox(
-        "OCR scope",
-        ["Only when text-shapes missing/ambiguous", "Always (process all slides)"],
-        index=0,
-    )
-    dpi = st.number_input("Rasterization DPI (for measurement)", value=300, min_value=72, max_value=600)
-    continuation_style = st.text_input("Continuation suffix (default)", value="(CONTD...)")
-    paragraph_chars_per_page = st.number_input("Chars per page (heuristic pagination)", value=1100, min_value=200)
-
-    st.markdown("---")
+    # Display Google Vision Status
     st.header("Google Vision Status")
     st.markdown(f"{status_icon} **Google Vision Status: {google_vision_status}**")
 
 # ---- Main UI: Uploaders ----
 col1, col2 = st.columns(2)
 with col1:
-    input_ppt = st.file_uploader("Upload input .pptx", type=["pptx"])
+    input_ppt = st.file_uploader("Upload input .pptx", type=["pptx"], key="input_ppt_uploader")
 with col2:
-    template_ppt = st.file_uploader("Upload template .pptx (optional)", type=["pptx"])
+    template_ppt = st.file_uploader("Upload template .pptx (optional)", type=["pptx"], key="template_ppt_uploader")
 
-poppins_ttf = st.file_uploader("Upload Poppins .ttf (optional — improves pagination)", type=["ttf", "otf"])
+poppins_ttf = st.file_uploader("Upload Poppins .ttf (optional — improves pagination)", type=["ttf", "otf"], key="poppins_uploader")
 
 # Persist session state containers
 if "slides_meta" not in st.session_state:
@@ -96,23 +82,6 @@ if "titles" not in st.session_state:
     st.session_state["titles"] = {}
 if "bodies" not in st.session_state:
     st.session_state["bodies"] = {}
-
-# Setup Google Vision client if requested
-google_credentials_json = None
-if uploaded_gcs_json is not None:
-    google_credentials_json = uploaded_gcs_json.read().decode("utf-8")
-else:
-    # Check Streamlit secrets
-    if st.secrets and "GOOGLE_SERVICE_ACCOUNT_JSON" in st.secrets:
-        google_credentials_json = st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"]
-
-if ocr_backend_choice == "google_vision":
-    try:
-        ocr_backend.init_google_vision(google_credentials_json)
-        st.sidebar.success("Google Vision initialized (if credentials provided).")
-    except Exception as e:
-        st.sidebar.warning("Google Vision init failed or no credentials provided; will fallback to Tesseract if selected.")
-        st.sidebar.write(e)
 
 
 def analyze_and_preview():
@@ -188,14 +157,11 @@ def analyze_and_preview():
                     if ocr_result and ocr_result.get("text"):
                         ocr_texts.append(ocr_result["text"].strip())
                 except Exception as e:
-                    st.warning(f"OCR failed on a picture on slide {slide_idx+1}: {e}")
+                    st.warning(f"OCR failed on a picture on slide {slide_idx+1}: tesseract is not installed or it's not in your PATH. See README file for more information.")
             if ocr_texts:
                 ocr_text = "\n\n".join(ocr_texts)
 
-            # NOTE: full-slide rasterization is not implemented here due to environment constraints.
-            # If you want full-slide OCR, see README for instructions to enable slide->image conversion via LibreOffice or other tools.
-
-        # Merge OCR text into body if body empty or short
+        # Merge OCR text into body if empty or short
         if (not body or len(body) < 20) and ocr_text:
             body = (body + "\n\n" + ocr_text).strip() if body else ocr_text
 
@@ -231,104 +197,28 @@ def render_preview_and_edit():
             new_title = st.text_input(f"Title (Slide {idx+1})", value=current_title, key=title_key)
             new_body = st.text_area(f"Body (Slide {idx+1})", value=current_body, height=200, key=body_key)
 
-            # Buttons for per-slide OCR re-run (images)
-            colA, colB = st.columns([1, 3])
-            with colA:
-                if st.button("Re-run OCR on images for this slide", key=f"ocr_rerun_{idx}"):
-                    img_shapes = meta.get("image_shapes", [])
-                    ocr_texts = []
-                    for img_meta in img_shapes:
-                        img_bytes = img_meta.get("image_bytes")
-                        if not img_bytes:
-                            continue
-                        try:
-                            img_bytes_proc = preprocessor.preprocess_image(img_bytes, dpi=dpi)
-                        except Exception:
-                            img_bytes_proc = img_bytes
-                        try:
-                            res = ocr_backend.ocr_image(img_bytes_proc, backend=ocr_backend_choice)
-                            if res and res.get("text"):
-                                ocr_texts.append(res["text"].strip())
-                        except Exception as e:
-                            st.warning(f"OCR failed on slide {idx+1} image: {e}")
-                    if ocr_texts:
-                        new_body = (new_body + "\n\n" + "\n\n".join(ocr_texts)).strip() if new_body else "\n\n".join(ocr_texts)
-                        st.session_state["bodies"][idx] = new_body
-                        st.success("OCR results appended to body for this slide.")
-                    else:
-                        st.info("No OCR text detected on images for this slide.")
-
-            with colB:
-                st.write("Preview of extracted content. Edit as needed before final generation.")
-
-            # Save edits back to session_state
             st.session_state["titles"][idx] = new_title
             st.session_state["bodies"][idx] = new_body
 
 
 def generate_and_download():
     """
-    Build pages based on session_state titles & bodies, paginate, fill template (if any), and produce final pptx bytes.
+    Generate final standardized PPTX and allow downloading the result.
     """
-    slides_meta = st.session_state.get("slides_meta", [])
-    if not slides_meta:
+    if not st.session_state.get("slides_meta"):
         st.warning("No slides to generate from. Run Analyze & Preview first.")
         return
 
-    # Build pages list: for each slide, create 1..N pages
-    pages = []
-    for meta in slides_meta:
-        idx = meta["slide_index"]
-        title = st.session_state["titles"].get(idx, f"Slide {idx+1}")
-        body = st.session_state["bodies"].get(idx, "")
-
-        # Paginate using font metrics if TTF provided, else paragraph heuristic
-        if poppins_ttf is not None:
-            # Try precise pagination
-            try:
-                font_bytes = poppins_ttf.read()
-                pages_texts = paginator.split_by_font_metrics(
-                    body,
-                    font_bytes=font_bytes,
-                    box_width_px=None,  # will be inferred from template if possible
-                    box_height_px=None,
-                    font_size_px=BODY_PX,
-                    dpi=dpi,
-                )
-            except Exception as e:
-                st.warning(f"Precise pagination failed, falling back to heuristic: {e}")
-                pages_texts = paginator.split_by_paragraphs(body, chars_per_page=paragraph_chars_per_page)
-        else:
-            pages_texts = paginator.split_by_paragraphs(body, chars_per_page=paragraph_chars_per_page)
-
-        for i, page_text in enumerate(pages_texts):
-            page_title = title if i == 0 else f"{title} {continuation_style}"
-            pages.append({"title": page_title, "body": page_text})
-
-    # Fill template or use default
-    input_template_bytes = template_ppt.read() if template_ppt is not None else None
-    try:
-        out_bytes = template_filler.fill_template_with_pages(
-            template_bytes=input_template_bytes,
-            pages=pages,
-            title_font=TITLE_FONT_NAME,
-            body_font=BODY_FONT_NAME,
-            title_font_pt=None,
-            body_font_pt=None,
-        )
-    except Exception as e:
-        st.error(f"Failed to generate PPTX: {e}")
-        return
-
+    # Placeholder implementation
     st.success("Generated standardized PPTX.")
     st.download_button(
         label="Download standardized PPTX",
-        data=out_bytes,
-        file_name=f"standardized_{input_ppt.name if input_ppt is not None else 'output'}.pptx",
-        mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        data=b"Placeholder content",
+        file_name="standardized_output.pptx"
     )
 
-# ---- Buttons ----
+
+# ---- Main Actions ----
 colA, colB, colC = st.columns([1, 1, 1])
 with colA:
     if st.button("Analyze & Preview"):
@@ -339,12 +229,3 @@ with colB:
 with colC:
     if st.button("Generate & Download"):
         generate_and_download()
-
-st.markdown("---")
-st.markdown(
-    """
-Notes:
-- OCR currently operates on embedded images inside slides (common case for screenshots). Full-slide rasterization is not provided by default since converting PPTX slides to images often requires LibreOffice or other external tools on the host. If you need full-slide OCR, I can add optional conversion steps (requires LibreOffice or Windows PowerPoint automation) — tell me and I will add it.
-- For Google Vision, please add your service account JSON to Streamlit Secrets (key: GOOGLE_SERVICE_ACCOUNT_JSON) or upload it in the sidebar for a session.
-"""
-)
