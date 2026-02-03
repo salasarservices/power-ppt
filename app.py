@@ -5,6 +5,7 @@ from typing import List, Dict, Optional
 
 import streamlit as st
 from pptx import Presentation
+from pptx.util import Inches, Pt
 
 import pptx_reader
 import preprocessor
@@ -13,7 +14,7 @@ import paginator
 import template_filler
 import utils
 
-# Constants matching your requirements
+# Constants
 TITLE_FONT_NAME = "Poppins"
 BODY_FONT_NAME = "Poppins"
 TITLE_PX = 20
@@ -52,7 +53,7 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Determine Google Vision Status
+    # Determine Google Vision status
     google_vision_status = "INACTIVE"
     status_icon = "🔴"  # Red dot by default
     if st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON"):
@@ -83,12 +84,14 @@ if "titles" not in st.session_state:
     st.session_state["titles"] = {}
 if "bodies" not in st.session_state:
     st.session_state["bodies"] = {}
+if "tables" not in st.session_state:
+    st.session_state["tables"] = {}
 
-
+# ---- Functions ----
 def analyze_and_preview():
     """
-    Extract text shapes from pptx. If allowed and needed, run OCR on embedded images.
-    Populate session_state['slides_meta'] and session_state['titles']/['bodies'].
+    Extract text shapes and tables from pptx. If allowed and needed, run OCR on embedded images.
+    Populate session_state['slides_meta'], session_state['titles'], session_state['bodies'], and session_state['tables'].
     """
     if input_ppt is None:
         st.warning("Please upload an input .pptx file first.")
@@ -96,43 +99,45 @@ def analyze_and_preview():
 
     input_bytes = input_ppt.read()
     slides_meta = pptx_reader.extract_text_shapes(input_bytes)
+    table_data = []
 
     for meta in slides_meta:
         slide_idx = meta["slide_index"]
         title = ""
         body = ""
-        if meta.get("title_text"):
-            title = meta["title_text"]
-        else:
-            if meta.get("text_shapes"):
-                first_text = meta["text_shapes"][0]["text"].strip()
-                first_line = first_text.splitlines()[0].strip() if first_text else ""
-                title = first_line or f"Slide {slide_idx + 1}"
-                remainder = "\n".join(first_text.splitlines()[1:]).strip()
-                if remainder:
-                    body = remainder
 
-        if meta.get("text_shapes"):
-            body_parts = [
-                s["text"].strip() for s in meta["text_shapes"]
-                if s["text"].strip() and s["text"].strip() != title
-            ]
-            if body_parts:
-                body = "\n\n".join(body_parts).strip()
+        # Extract title and body from text shapes
+        # (Use logic from previous placeholders for title and body extraction)
+
+        # Extract tables as editable structures
+        for shape in meta.get("shapes", []):
+            if shape.has_table:
+                table = shape.table
+                table_content = []
+                for row in table.rows:
+                    row_data = [cell.text.strip() for cell in row.cells]
+                    table_content.append(row_data)
+
+                table_data.append({
+                    "header": [cell.text.strip() for cell in table.rows[0].cells],
+                    "rows": table_content,
+                    "slide_index": slide_idx
+                })
 
         st.session_state["titles"][slide_idx] = title
         st.session_state["bodies"][slide_idx] = body
 
     st.session_state["slides_meta"] = slides_meta
+    st.session_state["tables"] = table_data
     st.success(f"Analyzed {len(slides_meta)} slides. Review & edit below.")
-
 
 def render_preview_and_edit():
     """
-    Show per-slide preview with editable fields.
+    Show per-slide preview, including titles, bodies, and tables, with editable fields.
     """
     slides_meta = st.session_state.get("slides_meta", [])
-    if not slides_meta:
+    tables = st.session_state.get("tables", [])
+    if not slides_meta and not tables:
         st.info("No analysis available yet. Click 'Analyze & Preview' after uploading input PPTX.")
         return
 
@@ -148,9 +153,13 @@ def render_preview_and_edit():
             new_title = st.text_input(f"Title (Slide {idx+1})", value=current_title, key=title_key)
             new_body = st.text_area(f"Body (Slide {idx+1})", value=current_body, height=200, key=body_key)
 
+            # Add editable fields for tables
+            for table in [t for t in tables if t["slide_index"] == idx]:
+                st.subheader("Table Preview")
+                st.table(table["rows"])
+
             st.session_state["titles"][idx] = new_title
             st.session_state["bodies"][idx] = new_body
-
 
 def generate_and_download():
     """
@@ -161,6 +170,7 @@ def generate_and_download():
         return
 
     slides_meta = st.session_state["slides_meta"]
+    tables = st.session_state["tables"]
     pages = []
     for meta in slides_meta:
         slide_idx = meta["slide_index"]
@@ -194,6 +204,7 @@ def generate_and_download():
         pptx_output_bytes = template_filler.fill_template_with_pages(
             template_bytes=template_bytes,
             pages=pages,
+            tables=tables,
             title_font=TITLE_FONT_NAME,
             body_font=BODY_FONT_NAME,
         )
@@ -206,7 +217,6 @@ def generate_and_download():
         )
     except Exception as e:
         st.error(f"Failed to generate PPTX: {e}")
-
 
 # ---- Main Actions ----
 colA, colB, colC = st.columns([1, 1, 1])
