@@ -99,6 +99,12 @@ def analyze_and_preview():
 
     input_bytes = input_ppt.read()
     slides_meta = pptx_reader.extract_text_shapes(input_bytes)
+    
+    # Check if slides meta is empty
+    if not slides_meta:
+        st.error("No valid text or content extracted from the uploaded presentation! Check the file content.")
+        return
+
     table_data = []
 
     for meta in slides_meta:
@@ -107,7 +113,15 @@ def analyze_and_preview():
         body = ""
 
         # Extract title and body from text shapes
-        # (Use placeholder logic for title and body extraction)
+        if "title_text" in meta and meta["title_text"]:
+            title = meta["title_text"]
+        else:
+            title = f"Slide {slide_idx + 1} (No title detected)"
+        
+        if "body_text" in meta and meta["body_text"]:
+            body = meta["body_text"]
+        else:
+            body = f"No content detected for Slide {slide_idx + 1}"
 
         # Extract tables as editable structures
         for shape in meta.get("shapes", []):
@@ -150,14 +164,17 @@ def render_preview_and_edit():
             current_title = st.session_state["titles"].get(idx, "")
             current_body = st.session_state["bodies"].get(idx, "")
 
+            # Show Titles and Bodies
             new_title = st.text_input(f"Title (Slide {idx+1})", value=current_title, key=title_key)
             new_body = st.text_area(f"Body (Slide {idx+1})", value=current_body, height=200, key=body_key)
 
-            # Add editable fields for tables
-            for table in [t for t in tables if t["slide_index"] == idx]:
-                st.subheader("Table Preview")
+            # Show Tables
+            tables_for_slide = [t for t in tables if t["slide_index"] == idx]
+            for table in tables_for_slide:
+                st.subheader(f"Table for Slide {idx + 1}")
                 st.table(table["rows"])
 
+            # Update user edits
             st.session_state["titles"][idx] = new_title
             st.session_state["bodies"][idx] = new_body
 
