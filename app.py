@@ -51,12 +51,34 @@ with st.sidebar:
     paragraph_chars_per_page = st.number_input("Chars per page (heuristic pagination)", value=1100, min_value=200)
 
     st.markdown("---")
-    st.markdown("Google Vision credentials")
-    st.markdown(
-        "Add your service account JSON to Streamlit Secrets (key: GOOGLE_SERVICE_ACCOUNT_JSON) for production.\n"
-        "Or upload a service-account JSON here for this session (it will not be persisted)."
+    # Determine Google Vision status
+google_vision_status = "INACTIVE"
+status_icon = "🔴"  # Initialize as red dot by default
+
+if st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON"):
+    try:
+        ocr_backend.init_google_vision(st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"])
+        google_vision_status = "ACTIVE"
+        status_icon = "🟢"  # Change to green dot if Google Vision initializes successfully
+    except Exception as e:
+        st.warning("Google Vision initialization failed. Check your service account credentials.")
+
+with st.sidebar:
+    st.header("Processing Options")
+    st.checkbox("Use OCR on images (may be slower / cost money)", value=True)
+    ocr_backend_choice = st.selectbox("OCR backend", ["google_vision", "tesseract"], index=0)
+    ocr_scope = st.selectbox(
+        "OCR scope",
+        ["Only when text-shapes missing/ambiguous", "Always (process all slides)"],
+        index=0,
     )
-    uploaded_gcs_json = st.file_uploader("Upload Google service account JSON (session only)", type=["json"])
+    dpi = st.number_input("Rasterization DPI (for measurement)", value=300, min_value=72, max_value=600)
+    continuation_style = st.text_input("Continuation suffix (default)", value="(CONTD...)")
+    paragraph_chars_per_page = st.number_input("Chars per page (heuristic pagination)", value=1100, min_value=200)
+
+    st.markdown("---")
+    st.header("Google Vision Status")
+    st.markdown(f"{status_icon} **Google Vision Status: {google_vision_status}**")
 
 # ---- Main UI: Uploaders ----
 col1, col2 = st.columns(2)
