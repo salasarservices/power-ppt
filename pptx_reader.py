@@ -1,66 +1,80 @@
-# pptx_reader.py
 import io
-from typing import List, Dict, Any
-
 from pptx import Presentation
-from pptx.util import Emu
-
-# Utility to extract shapes and embedded pictures from slides
-
-def _get_shape_bbox(shape) -> Dict[str, int]:
-    """
-    Return bounding box of a shape in EMU units
-    """
-    try:
-        return {"left": int(shape.left), "top": int(shape.top), "width": int(shape.width), "height": int(shape.height)}
-    except Exception:
-        return {"left": 0, "top": 0, "width": 0, "height": 0}
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 
-def extract_text_shapes(presentation_bytes: bytes) -> List[Dict[str, Any]]:
+def extract_text_shapes(pptx_bytes):
     """
-    Parse presentation bytes and return meta per slide including:
-    - slide_index
-    - title_text (if found via placeholder)
-    - text_shapes: list of {'bbox':..., 'text': str}
-    - image_shapes: list of {'bbox':..., 'image_bytes': bytes}
+    Extract text shapes, tables, and images from a PowerPoint presentation.
+    
+    Args:
+        pptx_bytes: Binary content of the PPTX file.
+    
+    Returns:
+        List of dictionaries containing slide metadata including:
+        - slide_index
+        - title_text
+        - body_text
+        - shapes (including tables and images)
+        - text_shapes
+        - image_shapes
     """
-    prs = Presentation(io.BytesIO(presentation_bytes))
+    prs = Presentation(io.BytesIO(pptx_bytes))
     slides_meta = []
-    for idx, slide in enumerate(prs.slides):
-        meta = {"slide_index": idx, "text_shapes": [], "image_shapes": [], "title_text": None}
 
-        # Try to find title placeholder
-        for shape in slide.shapes:
-            if not getattr(shape, "has_text_frame", False):
-                continue
-            try:
-                ph = shape.placeholder_format
-                if ph.type.name in ("TITLE", "CENTER_TITLE"):
-                    txt = shape.text.strip()
-                    if txt:
-                        meta["title_text"] = txt
-            except Exception:
-                # Not all shapes expose placeholder_format reliably
-                pass
+    for slide_idx, slide in enumerate(prs.slides):
+        meta = {
+            "slide_index": slide_idx,
+            "title_text": "",
+            "body_text": "",
+            "text_shapes": [],
+            "image_shapes": [],
+            "shapes": []
+        }
 
-        # Collect text shapes and images
+        title_text = ""
+        body_text_parts = []
+
         for shape in slide.shapes:
-            # text shapes
-            if getattr(shape, "has_text_frame", False):
-                txt = shape.text.strip()
-                if txt:
-                    bbox = _get_shape_bbox(shape)
-                    meta["text_shapes"].append({"bbox": bbox, "text": txt})
-            # image shapes (pictures)
-            try:
-                if hasattr(shape, "image") and shape.image is not None:
-                    image_bytes = shape.image.blob
-                    bbox = _get_shape_bbox(shape)
-                    meta["image_shapes"].append({"bbox": bbox, "image_bytes": image_bytes})
-            except Exception:
-                # some shapes may throw; skip them
-                pass
+            # Store the shape for table extraction
+            meta["shapes"].append(shape)
+
+            # Extract title from title placeholder
+            if shape.is_placeholder:
+                phf = shape.placeholder_format
+                if phf.type == 1:  # Title placeholder (PP_PLACEHOLDER.TITLE = 1)
+                    if shape.has_text_frame:
+                        title_text = shape.text_frame.text.strip()
+
+            # Extract text from text boxes and content placeholders
+            if shape.has_text_frame:
+                text = shape.text_frame.text.strip()
+                if text:
+                    # Skip if this is the title (already captured)
+                    if text != title_text:
+                        body_text_parts.append(text)
+                    
+                    meta["text_shapes"].append({
+                        "text": text,
+                        "shape_type": shape.shape_type
+                    })
+
+            # Extract images
+            if shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+                try:
+                    image = shape.image
+                    image_bytes = image.blob
+                    meta["image_shapes"].append({
+                        "image_bytes": image_bytes,
+                        "content_type": image.content_type
+                    })
+                except Exception as e:
+                    print(f"Failed to extract image from slide {slide_idx}: {e}")
+
+        # Set extracted title and body
+        meta["title_text"] = title_text if title_text else f"Slide {slide_idx + 1}"
+        meta["body_text"] = "\n\n".join(body_text_parts) if body_text_parts else ""
 
         slides_meta.append(meta)
+
     return slides_meta
