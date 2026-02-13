@@ -85,7 +85,7 @@ if "titles" not in st.session_state:
 if "bodies" not in st.session_state:
     st.session_state["bodies"] = {}
 if "tables" not in st.session_state:
-    st.session_state["tables"] = {}
+    st.session_state["tables"] = []
 
 # ---- Functions ----
 def analyze_and_preview():
@@ -109,19 +109,8 @@ def analyze_and_preview():
 
     for meta in slides_meta:
         slide_idx = meta["slide_index"]
-        title = ""
-        body = ""
-
-        # Extract title and body from text shapes
-        if "title_text" in meta and meta["title_text"]:
-            title = meta["title_text"]
-        else:
-            title = f"Slide {slide_idx + 1} (No title detected)"
-        
-        if "body_text" in meta and meta["body_text"]:
-            body = meta["body_text"]
-        else:
-            body = f"No content detected for Slide {slide_idx + 1}"
+        title = meta.get("title_text", f"Slide {slide_idx + 1}")
+        body = meta.get("body_text", "")
 
         # Extract tables as editable structures
         for shape in meta.get("shapes", []):
@@ -132,11 +121,12 @@ def analyze_and_preview():
                     row_data = [cell.text.strip() for cell in row.cells]
                     table_content.append(row_data)
 
-                table_data.append({
-                    "header": [cell.text.strip() for cell in table.rows[0].cells],
-                    "rows": table_content,
-                    "slide_index": slide_idx
-                })
+                if table_content:
+                    table_data.append({
+                        "header": table_content[0] if table_content else [],
+                        "rows": table_content,
+                        "slide_index": slide_idx
+                    })
 
         st.session_state["titles"][slide_idx] = title
         st.session_state["bodies"][slide_idx] = body
@@ -151,7 +141,7 @@ def render_preview_and_edit():
     """
     slides_meta = st.session_state.get("slides_meta", [])
     tables = st.session_state.get("tables", [])
-    if not slides_meta and not tables:
+    if not slides_meta:
         st.info("No analysis available yet. Click 'Analyze & Preview' after uploading input PPTX.")
         return
 
@@ -188,21 +178,20 @@ def generate_and_download():
         return
 
     slides_meta = st.session_state["slides_meta"]
-    tables = st.session_state["tables"]
+    tables = st.session_state.get("tables", [])
     pages = []
 
-    # Prepare and debug content before generating slides
+    # Prepare content for generation
     for meta in slides_meta:
         slide_idx = meta["slide_index"]
         title = st.session_state["titles"].get(slide_idx, f"Slide {slide_idx + 1}")
         body = st.session_state["bodies"].get(slide_idx, "")
-        pages.append({"title": title, "body": body})
-    
-    st.write("Pages Data:", pages)  # Debugging
-    st.write("Tables Data:", tables)  # Debugging
+        pages.append({"title": title, "body": body, "slide_index": slide_idx})
 
     # Check if there's a template
-    template_bytes = template_ppt.read() if template_ppt else None
+    template_bytes = None
+    if template_ppt is not None:
+        template_bytes = template_ppt.read()
 
     try:
         # Pass the extracted content and tables to the template filler
@@ -215,15 +204,18 @@ def generate_and_download():
         )
 
         # Allow user to download the generated PowerPoint presentation
-        st.success("Generated standardized PPTX.")
+        st.success("✅ Generated standardized PPTX successfully!")
         st.download_button(
-            label="Download standardized PPTX",
+            label="📥 Download Standardized PPTX",
             data=pptx_output_bytes,
             file_name=f"standardized_{input_ppt.name if input_ppt else 'output'}.pptx",
             mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            key="download_pptx_button"
         )
     except Exception as e:
-        st.error(f"Failed to generate PPTX: {e}")
+        st.error(f"❌ Failed to generate PPTX: {e}")
+        import traceback
+        st.code(traceback.format_exc())
 
 # ---- Main Actions ----
 colA, colB, colC = st.columns([1, 1, 1])
