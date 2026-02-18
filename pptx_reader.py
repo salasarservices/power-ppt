@@ -3,21 +3,35 @@ from pptx import Presentation
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 
+# Text patterns to exclude from body content
+EXCLUDED_PHRASES = [
+    "YOU MANAGE YOUR ENTERPRISE",
+    "We Will Manage Your Insurable Risks",
+    "WE WILL MANAGE YOUR INSURABLE RISKS",
+    "you manage your enterprise",
+    "we will manage your insurable risks"
+]
+
+
+def should_exclude_text(text):
+    """Check if text should be excluded from body content"""
+    text_clean = text.strip()
+    for phrase in EXCLUDED_PHRASES:
+        if phrase.lower() in text_clean.lower():
+            return True
+    return False
+
+
 def extract_text_shapes(pptx_bytes):
     """
     Extract text shapes, tables, and images from a PowerPoint presentation.
+    Excludes standard footer/slogan text from body content.
     
     Args:
         pptx_bytes: Binary content of the PPTX file.
     
     Returns:
-        List of dictionaries containing slide metadata including:
-        - slide_index
-        - title_text
-        - body_text
-        - shapes (including tables and images)
-        - text_shapes
-        - image_shapes
+        List of dictionaries containing slide metadata.
     """
     prs = Presentation(io.BytesIO(pptx_bytes))
     slides_meta = []
@@ -52,7 +66,9 @@ def extract_text_shapes(pptx_bytes):
                 if text:
                     # Skip if this is the title (already captured)
                     if text != title_text:
-                        body_text_parts.append(text)
+                        # Skip if this is the standard slogan/footer
+                        if not should_exclude_text(text):
+                            body_text_parts.append(text)
                     
                     meta["text_shapes"].append({
                         "text": text,
