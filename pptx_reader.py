@@ -25,13 +25,6 @@ def should_exclude_text(text):
 def extract_text_shapes(pptx_bytes):
     """
     Extract text shapes, tables, and images from a PowerPoint presentation.
-    Excludes standard footer/slogan text from body content.
-    
-    Args:
-        pptx_bytes: Binary content of the PPTX file.
-    
-    Returns:
-        List of dictionaries containing slide metadata.
     """
     prs = Presentation(io.BytesIO(pptx_bytes))
     slides_meta = []
@@ -50,25 +43,21 @@ def extract_text_shapes(pptx_bytes):
         body_text_parts = []
 
         for shape in slide.shapes:
-            # Store the shape for table extraction
             meta["shapes"].append(shape)
 
-            # Extract title from title placeholder
+            # Extract title
             if shape.is_placeholder:
                 phf = shape.placeholder_format
-                if phf.type == 1:  # Title placeholder (PP_PLACEHOLDER.TITLE = 1)
+                if phf.type == 1:  # Title placeholder
                     if shape.has_text_frame:
                         title_text = shape.text_frame.text.strip()
 
-            # Extract text from text boxes and content placeholders
+            # Extract text
             if shape.has_text_frame:
                 text = shape.text_frame.text.strip()
                 if text:
-                    # Skip if this is the title (already captured)
-                    if text != title_text:
-                        # Skip if this is the standard slogan/footer
-                        if not should_exclude_text(text):
-                            body_text_parts.append(text)
+                    if text != title_text and not should_exclude_text(text):
+                        body_text_parts.append(text)
                     
                     meta["text_shapes"].append({
                         "text": text,
@@ -87,7 +76,6 @@ def extract_text_shapes(pptx_bytes):
                 except Exception as e:
                     print(f"Failed to extract image from slide {slide_idx}: {e}")
 
-        # Set extracted title and body
         meta["title_text"] = title_text if title_text else f"Slide {slide_idx + 1}"
         meta["body_text"] = "\n\n".join(body_text_parts) if body_text_parts else ""
 
