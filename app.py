@@ -55,12 +55,12 @@ with st.sidebar:
 
     # Determine Google Vision status
     google_vision_status = "INACTIVE"
-    status_icon = "🔴"  # Red dot by default
+    status_icon = "🔴"
     if st.secrets.get("GOOGLE_SERVICE_ACCOUNT_JSON"):
         try:
             ocr_backend.init_google_vision(st.secrets["GOOGLE_SERVICE_ACCOUNT_JSON"])
             google_vision_status = "ACTIVE"
-            status_icon = "🟢"  # Green dot if initialized successfully
+            status_icon = "🟢"
         except Exception as e:
             st.warning("Google Vision initialization failed. Check your service account credentials.")
 
@@ -90,8 +90,7 @@ if "tables" not in st.session_state:
 # ---- Functions ----
 def analyze_and_preview():
     """
-    Extract text shapes and tables from pptx. If allowed and needed, run OCR on embedded images.
-    Populate session_state['slides_meta'], session_state['titles'], session_state['bodies'], and session_state['tables'].
+    Extract text shapes and tables from pptx.
     """
     if input_ppt is None:
         st.warning("Please upload an input .pptx file first.")
@@ -100,9 +99,8 @@ def analyze_and_preview():
     input_bytes = input_ppt.read()
     slides_meta = pptx_reader.extract_text_shapes(input_bytes)
     
-    # Check if slides meta is empty
     if not slides_meta:
-        st.error("No valid text or content extracted from the uploaded presentation! Check the file content.")
+        st.error("No valid text or content extracted from the uploaded presentation!")
         return
 
     table_data = []
@@ -112,9 +110,9 @@ def analyze_and_preview():
         title = meta.get("title_text", f"Slide {slide_idx + 1}")
         body = meta.get("body_text", "")
 
-        # Extract tables as editable structures
+        # Extract tables
         for shape in meta.get("shapes", []):
-            if shape.has_table:
+            if hasattr(shape, 'has_table') and shape.has_table:
                 table = shape.table
                 table_content = []
                 for row in table.rows:
@@ -133,11 +131,11 @@ def analyze_and_preview():
 
     st.session_state["slides_meta"] = slides_meta
     st.session_state["tables"] = table_data
-    st.success(f"Analyzed {len(slides_meta)} slides. Review & edit below.")
+    st.success(f"✅ Analyzed {len(slides_meta)} slides. Review & edit below.")
 
 def render_preview_and_edit():
     """
-    Show per-slide preview, including titles, bodies, and tables, with editable fields.
+    Show per-slide preview with editable fields.
     """
     slides_meta = st.session_state.get("slides_meta", [])
     tables = st.session_state.get("tables", [])
@@ -154,24 +152,20 @@ def render_preview_and_edit():
             current_title = st.session_state["titles"].get(idx, "")
             current_body = st.session_state["bodies"].get(idx, "")
 
-            # Show Titles and Bodies
             new_title = st.text_input(f"Title (Slide {idx+1})", value=current_title, key=title_key)
             new_body = st.text_area(f"Body (Slide {idx+1})", value=current_body, height=200, key=body_key)
 
-            # Show Tables
             tables_for_slide = [t for t in tables if t["slide_index"] == idx]
             for table in tables_for_slide:
                 st.subheader(f"Table for Slide {idx + 1}")
                 st.table(table["rows"])
 
-            # Update user edits
             st.session_state["titles"][idx] = new_title
             st.session_state["bodies"][idx] = new_body
 
 def generate_and_download():
     """
-    Generate final standardized PPTX with extracted content (titles, bodies, and tables)
-    and allow downloading the resulting presentation.
+    Generate final standardized PPTX.
     """
     if not st.session_state.get("slides_meta"):
         st.warning("No slides to generate from. Run Analyze & Preview first.")
@@ -181,20 +175,17 @@ def generate_and_download():
     tables = st.session_state.get("tables", [])
     pages = []
 
-    # Prepare content for generation
     for meta in slides_meta:
         slide_idx = meta["slide_index"]
         title = st.session_state["titles"].get(slide_idx, f"Slide {slide_idx + 1}")
         body = st.session_state["bodies"].get(slide_idx, "")
         pages.append({"title": title, "body": body, "slide_index": slide_idx})
 
-    # Check if there's a template
     template_bytes = None
     if template_ppt is not None:
         template_bytes = template_ppt.read()
 
     try:
-        # Pass the extracted content and tables to the template filler
         pptx_output_bytes = template_filler.fill_template_with_pages(
             template_bytes=template_bytes,
             pages=pages,
@@ -203,7 +194,6 @@ def generate_and_download():
             body_font=BODY_FONT_NAME,
         )
 
-        # Allow user to download the generated PowerPoint presentation
         st.success("✅ Generated standardized PPTX successfully!")
         st.download_button(
             label="📥 Download Standardized PPTX",
