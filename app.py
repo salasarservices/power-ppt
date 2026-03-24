@@ -1,4 +1,5 @@
 import io
+import textwrap
 import traceback as tb
 from typing import Dict, List, Optional
 
@@ -10,6 +11,14 @@ import preprocessor
 import pptx_reader
 import template_filler
 import utils
+
+# ── HTML helper ────────────────────────────────────────────────────────────────
+# Streamlit's markdown renderer treats lines with ≥4 leading spaces as code
+# blocks (standard Markdown spec).  Strip common indentation so inline HTML
+# is always rendered, never shown as raw code.
+def _html(s: str) -> str:
+    return textwrap.dedent(s).strip()
+
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 TITLE_FONT_NAME = "Poppins"
@@ -409,12 +418,12 @@ def _init_textract_cached(key_id: str, secret_key: str, region: str):
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
     # Brand block
-    st.markdown(f"""
-    <div class="ss-sidebar-brand">
-        <img src="{LOGO_URL}" alt="Salasar Services">
-        <div class="ss-sidebar-appname">PowerPPT Normalizer</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(_html(f"""
+        <div class="ss-sidebar-brand">
+            <img src="{LOGO_URL}" alt="Salasar Services">
+            <div class="ss-sidebar-appname">PowerPPT Normalizer</div>
+        </div>
+    """), unsafe_allow_html=True)
 
     # OCR settings
     st.markdown("### OCR Settings")
@@ -487,29 +496,21 @@ with st.sidebar:
         return f'<span class="ss-badge {cls}"><span class="ss-badge-dot"></span>{lbl}</span>'
 
     st.markdown("### Service Status")
-    st.markdown(f"""
-    <div class="ss-svc-row">
-        <div>
-            <div class="ss-svc-name">Google Vision</div>
-            <div class="ss-svc-desc">Plain-text OCR</div>
-        </div>
-        {_badge(gv_active)}
-    </div>
-    <div class="ss-svc-row">
-        <div>
-            <div class="ss-svc-name">AWS Textract</div>
-            <div class="ss-svc-desc">Table-aware OCR</div>
-        </div>
-        {_badge(tx_active)}
-    </div>
-    <div class="ss-svc-row">
-        <div>
-            <div class="ss-svc-name">Tesseract</div>
-            <div class="ss-svc-desc">Offline fallback</div>
-        </div>
-        {_badge(True)}
-    </div>
-    """, unsafe_allow_html=True)
+    _svc_html = (
+        f'<div class="ss-svc-row"><div>'
+        f'<div class="ss-svc-name">Google Vision</div>'
+        f'<div class="ss-svc-desc">Plain-text OCR</div>'
+        f'</div>{_badge(gv_active)}</div>'
+        f'<div class="ss-svc-row"><div>'
+        f'<div class="ss-svc-name">AWS Textract</div>'
+        f'<div class="ss-svc-desc">Table-aware OCR</div>'
+        f'</div>{_badge(tx_active)}</div>'
+        f'<div class="ss-svc-row"><div>'
+        f'<div class="ss-svc-name">Tesseract</div>'
+        f'<div class="ss-svc-desc">Offline fallback</div>'
+        f'</div>{_badge(True)}</div>'
+    )
+    st.markdown(_svc_html, unsafe_allow_html=True)
 
 
 # ── Topbar ─────────────────────────────────────────────────────────────────────
@@ -542,16 +543,15 @@ def _step(num: str, name: str, desc: str, state: str, line_done: bool = False) -
     label_cls  = f"ss-step-name {state}"
     check = "✓" if state == "done" else num
     line  = f'<div class="ss-step-line{"  done" if line_done else ""}"></div>' if num != "4" else ""
-    return f"""
-    <div class="ss-step">
-        <div class="{circle_cls}">{check}</div>
-        <div class="ss-step-body">
-            <div class="{label_cls}">{name}</div>
-            <div class="ss-step-desc">{desc}</div>
-        </div>
-    </div>
-    {line}
-    """
+    # ⚠️  No leading indentation — Markdown treats 4-space-indented lines as code blocks.
+    return (
+        f'<div class="ss-step">'
+        f'<div class="{circle_cls}">{check}</div>'
+        f'<div class="ss-step-body">'
+        f'<div class="{label_cls}">{name}</div>'
+        f'<div class="ss-step-desc">{desc}</div>'
+        f'</div></div>{line}'
+    )
 
 has_input  = "input_file_uploaded" in st.session_state and st.session_state["input_file_uploaded"]
 step1 = "done" if analyzed else "active"
@@ -559,14 +559,17 @@ step2 = ("done" if exportable else "active") if analyzed else "pending"
 step3 = "active" if exportable else ("active" if analyzed else "pending")
 step4 = "done" if exportable else "pending"
 
-st.markdown(f"""
-<div class="ss-steps">
-    {_step("1", "Upload", "Input PPTX &amp; template", step1, line_done=analyzed)}
-    {_step("2", "Analyse", "Extract &amp; OCR content", step2, line_done=exportable)}
-    {_step("3", "Review", "Edit per-slide content", step3, line_done=exportable)}
-    {_step("4", "Export", "Generate &amp; download", step4, line_done=False)}
-</div>
-""", unsafe_allow_html=True)
+# Build the stepper HTML as a plain concatenated string so no line ever starts
+# with 4+ spaces (which Markdown would misinterpret as a code block).
+_steps_html = (
+    '<div class="ss-steps">'
+    + _step("1", "Upload",  "Input PPTX &amp; template",    step1, line_done=analyzed)
+    + _step("2", "Analyse", "Extract &amp; OCR content",    step2, line_done=exportable)
+    + _step("3", "Review",  "Edit per-slide content",       step3, line_done=exportable)
+    + _step("4", "Export",  "Generate &amp; download",      step4, line_done=False)
+    + '</div>'
+)
+st.markdown(_steps_html, unsafe_allow_html=True)
 
 
 # ── Metrics row (shown after analysis) ────────────────────────────────────────
@@ -577,28 +580,29 @@ if analyzed:
     slides_with_table = len({t["slide_index"] for t in st.session_state["tables"]})
     empty_slides = total_slides - slides_with_body
 
-    st.markdown(f"""
-    <div class="ss-metrics">
-        <div class="ss-metric">
-            <div class="ss-metric-value">{total_slides}</div>
-            <div class="ss-metric-label">Total Slides</div>
-        </div>
-        <div class="ss-metric">
-            <div class="ss-metric-value">{slides_with_body}</div>
-            <div class="ss-metric-label">Slides with Text</div>
-        </div>
-        <div class="ss-metric">
-            <div class="ss-metric-value">{slides_with_table}</div>
-            <div class="ss-metric-label">Slides with Tables</div>
-        </div>
-        <div class="ss-metric" style="border-top-color: {'var(--warning)' if empty_slides > 0 else 'var(--success)'}">
-            <div class="ss-metric-value" style="color: {'var(--warning)' if empty_slides > 0 else 'var(--success)'}">
-                {empty_slides}
+    _metric_warning_color = 'var(--warning)' if empty_slides > 0 else 'var(--success)'
+    st.markdown(_html(f"""
+        <div class="ss-metrics">
+            <div class="ss-metric">
+                <div class="ss-metric-value">{total_slides}</div>
+                <div class="ss-metric-label">Total Slides</div>
             </div>
-            <div class="ss-metric-label">Empty / OCR-needed</div>
+            <div class="ss-metric">
+                <div class="ss-metric-value">{slides_with_body}</div>
+                <div class="ss-metric-label">Slides with Text</div>
+            </div>
+            <div class="ss-metric">
+                <div class="ss-metric-value">{slides_with_table}</div>
+                <div class="ss-metric-label">Slides with Tables</div>
+            </div>
+            <div class="ss-metric" style="border-top-color:{_metric_warning_color}">
+                <div class="ss-metric-value" style="color:{_metric_warning_color}">
+                    {empty_slides}
+                </div>
+                <div class="ss-metric-label">Empty / OCR-needed</div>
+            </div>
         </div>
-    </div>
-    """, unsafe_allow_html=True)
+    """), unsafe_allow_html=True)
 
 
 # ── Main tabs ──────────────────────────────────────────────────────────────────
@@ -618,12 +622,12 @@ with tab_upload:
     col_a, col_b = st.columns(2, gap="large")
 
     with col_a:
-        st.markdown("""
-        <div class="ss-card-title" style="margin-bottom:6px;">
-            Input Presentation <span class="ss-upload-required">* required</span>
-        </div>
-        <div class="ss-upload-hint">The raw PPTX file you want to normalise.</div>
-        """, unsafe_allow_html=True)
+        st.markdown(_html("""
+            <div class="ss-card-title" style="margin-bottom:6px;">
+                Input Presentation <span class="ss-upload-required">* required</span>
+            </div>
+            <div class="ss-upload-hint">The raw PPTX file you want to normalise.</div>
+        """), unsafe_allow_html=True)
         input_ppt = st.file_uploader(
             "input_pptx", type=["pptx"], label_visibility="collapsed",
             key="input_ppt_uploader",
@@ -632,12 +636,12 @@ with tab_upload:
             st.success(f"Loaded: **{input_ppt.name}** ({input_ppt.size / 1024:.1f} KB)")
 
     with col_b:
-        st.markdown("""
-        <div class="ss-card-title" style="margin-bottom:6px;">
-            Brand Template <span style="font-size:0.63rem;color:var(--muted);margin-left:4px;">optional</span>
-        </div>
-        <div class="ss-upload-hint">Your standard PPTX template (preserves backgrounds &amp; brand styles).</div>
-        """, unsafe_allow_html=True)
+        st.markdown(_html("""
+            <div class="ss-card-title" style="margin-bottom:6px;">
+                Brand Template <span style="font-size:0.63rem;color:var(--muted);margin-left:4px;">optional</span>
+            </div>
+            <div class="ss-upload-hint">Your standard PPTX template (preserves backgrounds &amp; brand styles).</div>
+        """), unsafe_allow_html=True)
         template_ppt = st.file_uploader(
             "template_pptx", type=["pptx"], label_visibility="collapsed",
             key="template_ppt_uploader",
@@ -658,12 +662,12 @@ with tab_upload:
     with col_btn:
         run_analyse = st.button("Analyse Presentation", key="btn_analyse", use_container_width=True)
     with col_info:
-        st.markdown("""
-        <div style="padding:0.6rem 0; font-size:0.75rem; color:var(--muted); line-height:1.7;">
-            Extracts titles, body text and tables from all slides.<br>
-            If OCR is enabled, image-based slides are processed automatically.
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(_html("""
+            <div style="padding:0.6rem 0; font-size:0.75rem; color:var(--muted); line-height:1.7;">
+                Extracts titles, body text and tables from all slides.<br>
+                If OCR is enabled, image-based slides are processed automatically.
+            </div>
+        """), unsafe_allow_html=True)
 
     if run_analyse:
         if input_ppt is None:
@@ -743,13 +747,13 @@ with tab_review:
     tables      = st.session_state.get("tables", [])
 
     if not slides_meta:
-        st.markdown("""
-        <div class="ss-empty">
-            <div class="ss-empty-icon">🗂️</div>
-            <div class="ss-empty-title">No slides analysed yet</div>
-            <div class="ss-empty-desc">Upload a PPTX and run <strong>Analyse Presentation</strong> in the Upload tab.</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(_html("""
+            <div class="ss-empty">
+                <div class="ss-empty-icon">🗂️</div>
+                <div class="ss-empty-title">No slides analysed yet</div>
+                <div class="ss-empty-desc">Upload a PPTX and run <strong>Analyse Presentation</strong> in the Upload tab.</div>
+            </div>
+        """), unsafe_allow_html=True)
     else:
         st.markdown(
             f'<div class="ss-section">Slide Editor — {len(slides_meta)} slides</div>',
@@ -800,13 +804,13 @@ with tab_export:
     slides_meta = st.session_state.get("slides_meta", [])
 
     if not slides_meta:
-        st.markdown("""
-        <div class="ss-empty">
-            <div class="ss-empty-icon">📥</div>
-            <div class="ss-empty-title">Nothing to export yet</div>
-            <div class="ss-empty-desc">Complete the Upload &amp; Analyse step first.</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(_html("""
+            <div class="ss-empty">
+                <div class="ss-empty-icon">📥</div>
+                <div class="ss-empty-title">Nothing to export yet</div>
+                <div class="ss-empty-desc">Complete the Upload &amp; Analyse step first.</div>
+            </div>
+        """), unsafe_allow_html=True)
     else:
         col_gen, col_dl = st.columns([1, 1], gap="large")
 
@@ -859,20 +863,20 @@ with tab_export:
 
             if st.session_state["pptx_output_bytes"]:
                 size_kb = len(st.session_state["pptx_output_bytes"]) / 1024
-                st.markdown(f"""
-                <div class="ss-card" style="margin-bottom:1rem;">
-                    <div class="ss-card-header">
-                        <span class="ss-card-title">Output File</span>
-                        <span class="ss-card-icon">📄</span>
+                st.markdown(_html(f"""
+                    <div class="ss-card" style="margin-bottom:1rem;">
+                        <div class="ss-card-header">
+                            <span class="ss-card-title">Output File</span>
+                            <span class="ss-card-icon">📄</span>
+                        </div>
+                        <div style="font-size:0.82rem;font-weight:600;color:var(--text);">
+                            standardised_output.pptx
+                        </div>
+                        <div style="font-size:0.7rem;color:var(--muted);margin-top:3px;">
+                            {len(slides_meta)} slides · {size_kb:.1f} KB
+                        </div>
                     </div>
-                    <div style="font-size:0.82rem;font-weight:600;color:var(--text);">
-                        standardised_output.pptx
-                    </div>
-                    <div style="font-size:0.7rem;color:var(--muted);margin-top:3px;">
-                        {len(slides_meta)} slides · {size_kb:.1f} KB
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
+                """), unsafe_allow_html=True)
 
                 # Determine a sensible file name
                 try:
@@ -890,10 +894,10 @@ with tab_export:
                     use_container_width=True,
                 )
             else:
-                st.markdown("""
-                <div class="ss-empty" style="padding:2rem 1rem;">
-                    <div class="ss-empty-icon">⏳</div>
-                    <div class="ss-empty-title">Not generated yet</div>
-                    <div class="ss-empty-desc">Click <strong>Generate Standardised PPTX</strong> on the left.</div>
-                </div>
-                """, unsafe_allow_html=True)
+                st.markdown(_html("""
+                    <div class="ss-empty" style="padding:2rem 1rem;">
+                        <div class="ss-empty-icon">⏳</div>
+                        <div class="ss-empty-title">Not generated yet</div>
+                        <div class="ss-empty-desc">Click <strong>Generate Standardised PPTX</strong> on the left.</div>
+                    </div>
+                """), unsafe_allow_html=True)
