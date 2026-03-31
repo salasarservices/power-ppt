@@ -112,6 +112,25 @@ def _copy_slide(prs, source_idx=0):
     return new_slide
 
 
+def _fix_shape_ids(slide):
+    """
+    After copying template shapes onto a new slide, every copied shape keeps
+    its original id attribute (e.g. id="1", id="2" …).  When python-pptx then
+    calls add_textbox / add_table it starts its own counter from 1 — producing
+    duplicate <p:cNvPr id="…"> values.  PowerPoint treats duplicate IDs as
+    corruption and prompts "file needs repair".
+
+    This function walks every <p:cNvPr> element in the slide's shape tree and
+    assigns a unique sequential id so the invariant is satisfied.
+    """
+    sp_tree = slide.shapes._spTree
+    counter = 1
+    for elem in sp_tree.iter():
+        if elem.tag.endswith("}cNvPr"):
+            elem.set("id", str(counter))
+            counter += 1
+
+
 def _remove_slide_number_fields(slide):
     """
     Remove any shapes that contain an <a:fld type="slidenum"> field from the
@@ -130,22 +149,24 @@ def _remove_slide_number_fields(slide):
 
 
 def _remove_slide(prs, index):
-    """Remove the slide at `index` from the presentation."""
-    slide = prs.slides[index]
-    slide_part = slide.part
+    """
+    Remove the slide at `index` from the presentation.
 
-    # Find this slide's relationship ID in the presentation part
-    r_id = None
-    for rel in prs.part.rels.values():
-        if rel._target is slide_part:
-            r_id = rel.rId
-            break
-
-    # Remove from the slide-ID list
+    Reads the relationship ID directly from the <p:sldId r:id="…"> XML
+    attribute — more reliable than the previous object-identity search which
+    could silently fail and leave a dangling relationship that makes PowerPoint
+    report the file as needing repair.
+    """
     xml_slides = prs.slides._sldIdLst
-    xml_slides.remove(xml_slides[index])
+    sld_id_elem = xml_slides[index]
 
-    # Drop the relationship
+    # rId lives in the r: (relationship) namespace on the element itself
+    r_id = sld_id_elem.get(qn("r:id"))
+
+    # Remove the <p:sldId> element
+    xml_slides.remove(sld_id_elem)
+
+    # Drop the corresponding relationship from the presentation part
     if r_id:
         try:
             prs.part.drop_rel(r_id)
@@ -294,6 +315,9 @@ def fill_template_with_pages(template_bytes, pages, tables,
 
         tables_for_slide = [t for t in tables if t.get("slide_index") == slide_idx]
         _add_content(new_slide, body_text, tables_for_slide, body_font)
+
+        # Re-number all shape IDs so there are no duplicates after the copy
+        _fix_shape_ids(new_slide)
 
     # Remove the original template slides (they are still at index 0…n-1)
     for _ in range(n_template_slides):
