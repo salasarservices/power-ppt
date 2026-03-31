@@ -704,6 +704,7 @@ with tab_upload:
                         # OCR fallback
                         always_ocr = st.session_state.get("ocr_scope_select", "") == "Always (all slides)"
                         if use_ocr and (not body.strip() or always_ocr):
+                            ocr_error_for_slide: Optional[str] = None
                             for img_shape in meta.get("image_shapes", []):
                                 try:
                                     processed = preprocessor.preprocess_image(img_shape["image_bytes"])
@@ -718,7 +719,11 @@ with tab_upload:
                                                 "slide_index": slide_idx,
                                             })
                                 except Exception as ocr_err:
-                                    st.warning(f"OCR failed on slide {slide_idx + 1}: {ocr_err}")
+                                    # Capture first error only — shown once per slide below
+                                    if ocr_error_for_slide is None:
+                                        ocr_error_for_slide = str(ocr_err)
+                            if ocr_error_for_slide:
+                                st.warning(f"OCR unavailable for slide {slide_idx + 1}: {ocr_error_for_slide}")
 
                         st.session_state["titles"][slide_idx] = title
                         st.session_state["bodies"][slide_idx] = body

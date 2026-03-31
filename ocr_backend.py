@@ -271,8 +271,12 @@ def ocr_image(image_bytes: bytes, backend: str = "google_vision") -> Dict:
                 return _google_vision_ocr_bytes(image_bytes)
             except Exception:
                 pass  # fall through to Tesseract
-        # Offline fallback
-        return _tesseract_ocr_bytes(image_bytes)
+        # Offline fallback — Tesseract may not be installed; don't raise,
+        # just return empty so the caller can continue without OCR.
+        try:
+            return _tesseract_ocr_bytes(image_bytes)
+        except Exception:
+            return {"text": "", "lines": [], "tables": []}
 
     elif backend == "tesseract":
         return _tesseract_ocr_bytes(image_bytes)
