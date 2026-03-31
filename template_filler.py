@@ -49,16 +49,18 @@ def _copy_rels(src_slide, dst_slide):
     """
     Copy every relationship from src_slide to dst_slide.
     Returns {old_rId: new_rId} for any IDs that changed.
+    Handles both embedded (internal) and linked (external) relationships
+    so that logos stored as external URLs are preserved correctly.
     """
     rId_map = {}
     src_part = src_slide.part
     dst_part = dst_slide.part
 
     for rel in list(src_part.rels.values()):
-        if rel.is_external:
-            continue
         try:
-            new_rId = dst_part.relate_to(rel._target, rel.reltype)
+            new_rId = dst_part.relate_to(
+                rel._target, rel.reltype, is_external=rel.is_external
+            )
             if new_rId != rel.rId:
                 rId_map[rel.rId] = new_rId
         except Exception:
@@ -108,6 +110,23 @@ def _copy_slide(prs, source_idx=0):
         dst_tree.append(el)
 
     return new_slide
+
+
+def _remove_slide_number_fields(slide):
+    """
+    Remove any shapes that contain an <a:fld type="slidenum"> field from the
+    copied slide.  In the brand template these show as "1", "2", … on every
+    output slide, which is unwanted noise.
+    """
+    sp_tree = slide.shapes._spTree
+    to_remove = []
+    for sp in list(sp_tree.findall(qn("p:sp"))):
+        for fld in sp.findall(f".//{{{_A_NS}}}fld"):
+            if "slidenum" in fld.get("type", "").lower():
+                to_remove.append(sp)
+                break
+    for sp in to_remove:
+        sp_tree.remove(sp)
 
 
 def _remove_slide(prs, index):
@@ -269,6 +288,7 @@ def fill_template_with_pages(template_bytes, pages, tables,
         # Copy the brand template slide (always source_idx=0 because originals
         # are at the front and new slides are appended at the end)
         new_slide = _copy_slide(prs, source_idx=0)
+        _remove_slide_number_fields(new_slide)
 
         _set_title(new_slide, title_text)
 
