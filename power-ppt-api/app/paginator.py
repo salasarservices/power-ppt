@@ -46,7 +46,8 @@ def _measure_text_lines(text: str, font: ImageFont.FreeTypeFont, max_width_px: i
                     cur = w
                 else:
                     test = cur + " " + w
-                    w_px = font.getsize(test)[0]
+                    # Pillow 10+ removed Font.getsize; use getlength (advance width).
+                    w_px = font.getlength(test)
                     if w_px <= max_width_px:
                         cur = test
                     else:

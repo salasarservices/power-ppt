@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+build/
+dist/
+
+# Env / secrets (never commit real secrets — .env.example is tracked)
+.env
+.env.*
+!.env.example
+
+# Node / Vite (Phase 3)
+node_modules/
+power-ppt-web/dist/
+
+# OS / editor
+.DS_Store
+Thumbs.db
