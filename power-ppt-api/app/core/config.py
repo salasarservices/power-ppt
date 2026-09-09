@@ -21,7 +21,13 @@ class Settings(BaseSettings):
     template_path: str = str(_DEFAULT_TEMPLATE)
     template_version: str = "2026"
 
+    # Built SPA served by this service in production (single-service topology).
+    # Defaults to /app/web_static inside the image; absent in local/test runs, so
+    # the static mount is skipped and the API serves at root as before.
+    web_dist_path: str = str(_ROOT / "web_static")
+
     # Vite dev origin by default; override in prod with the deployed web origin.
+    # Unused in single-service prod (same-origin), harmless to keep.
     cors_origins: list[str] = ["http://localhost:5173"]
 
     # OCR

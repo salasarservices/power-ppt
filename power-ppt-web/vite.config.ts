@@ -10,13 +10,12 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    // Proxy API calls in dev so the browser hits same-origin /api/*.
+    // Single-service topology: the SPA calls the API same-origin (baseURL "").
+    // In dev, forward the API routes to the local FastAPI backend on :8077.
     proxy: {
-      "/api": {
-        target: "http://localhost:8077",
-        changeOrigin: true,
-        rewrite: (p) => p.replace(/^\/api/, ""),
-      },
+      "/health": "http://localhost:8077",
+      "/analyze": "http://localhost:8077",
+      "/generate": "http://localhost:8077",
     },
   },
 });

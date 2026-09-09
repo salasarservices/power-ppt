@@ -1,0 +1,15 @@
+# Keep the build context small and reproducible.
+**/node_modules
+**/dist
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.venv
+**/venv
+.git
+.github
+legacy-streamlit
+**/.env
+**/.env.*
+**/*.tsbuildinfo
+power-ppt-api/tests

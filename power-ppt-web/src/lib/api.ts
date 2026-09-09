@@ -27,9 +27,10 @@ export interface Health {
   template_version: string;
 }
 
-// Dev: Vite proxies /api -> http://localhost:8077 (see vite.config.ts).
-// Prod: web and API sit behind the same IAP origin, so /api resolves there too.
-const client = axios.create({ baseURL: "/api" });
+// Single-service topology: the SPA is served by the same FastAPI process that
+// exposes the API, so calls are same-origin (baseURL ""). In dev, Vite proxies
+// the API routes to the local backend on :8077 (see vite.config.ts).
+const client = axios.create({ baseURL: "" });
 
 export async function getHealth(): Promise<Health> {
   const { data } = await client.get<Health>("/health");

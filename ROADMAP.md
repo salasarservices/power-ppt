@@ -25,9 +25,19 @@ GCloud project: `power-ppt-486306`.
   logo, gradient footer bar). Verified end-to-end in-browser (analyze → edit plan →
   generate → download) on 09 Sep 2026. `npm run build` passes.
 
-**Not done:**
-- ⬜ Phase 4 — deploy to Cloud Run behind IAP. **Nothing is deployed; no CI/CD workflow
-  exists yet** (GitHub Actions tab is empty by design).
+**Phase 4 — in progress (artifacts ready, not yet deployed):**
+- ✅ Topology decided: **single Cloud Run service** — FastAPI serves the built SPA
+  (`web_static/`) at `/` and the API at root; conditional static mount keeps the 17
+  tests green. Verified locally (SPA at `/`, `/health` API wins). CI/CD deferred
+  (manual deploy first).
+- ✅ Deploy artifacts: repo-root multi-stage `Dockerfile` (Vite build → FastAPI),
+  `.dockerignore`, `power-ppt-api/.env.example`, and `DEPLOY.md` runbook
+  (enable-APIs → `gcloud run deploy --source .` region `asia-south1` → IAP → secrets).
+- ✅ Access confirmed: `digitalmarketing@` holds **roles/owner** on `power-ppt-486306`;
+  project ACTIVE; deploy APIs (run/cloudbuild/artifactregistry/secretmanager/iap) NOT
+  yet enabled (23 BigQuery-era services on).
+- ⬜ **Remaining (user runs — needs interactive `gcloud auth login`):** enable APIs,
+  `gcloud run deploy`, enable IAP + grant users. No CI/CD workflow yet (by design).
 
 **Open decision (user to choose):** deploy the API now for a live URL, OR build the UI
 first then deploy web+api together, OR just add a CI test workflow. User dismissed this
@@ -209,7 +219,9 @@ waits for the re-platform rather than investing in throwaway Streamlit UI.
    Brand tokens applied directly (no local `nexus-web` source found on this machine —
    only Nexus docs). Router/unused shadcn parts trimmed per D6. 5 primitives, 2 flow
    components, typed API client mirroring the FastAPI schemas.
-4. **Deploy** to `power-ppt-486306` behind IAP; Docker → Cloud Run; CI/CD.  ← NEXT
+4. **Deploy** to `power-ppt-486306` behind IAP; Docker → Cloud Run; CI/CD.  ← IN PROGRESS
+   Single-service topology; artifacts + runbook (`DEPLOY.md`) ready. Live deploy +
+   IAP pending (user runs the `gcloud` steps). CI/CD deferred.
 5. Package 3 hygiene folded in (pagination fix ✅, dep pinning ✅, golden tests ✅,
    runbook).
 6. **v2 — AI Generate mode** (Gemini, guardrailed), from the stable deployed base.
