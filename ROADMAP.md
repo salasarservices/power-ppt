@@ -6,6 +6,39 @@ Internal planning document. Not client-facing.
 
 ---
 
+## ▶ Resume here (state as of 09 Sep 2026)
+
+**Fresh-session start:** read this section, then the Target architecture + Sequencing
+sections below, and `PHASE1-BUILD-PLAN.md`. Repo: `github.com/salasarservices/power-ppt`.
+GCloud project: `power-ppt-486306`.
+
+**Done & pushed to `main`** (commit `6724983`):
+- ✅ Phase 1 — brand engine (`power-ppt-api/app/brand_engine/`): fits the 2026
+  template, heading (blue/green split, green rule OFF, heading 20pt / body 12pt),
+  body + tables, integrity guards. Retired the old Streamlit app to `legacy-streamlit/`.
+- ✅ Phase 2 — FastAPI service (`power-ppt-api/app/`): `/health`, `/generate`,
+  `/analyze`; OCR lazy-loaded; Dockerfile + env settings. **17 tests pass.**
+
+- ✅ Phase 3 — Vite/shadcn web UI (`power-ppt-web/`): upload → review → export flow
+  against the live API. React 18 + TS + Vite + Tailwind + hand-rolled shadcn-style
+  primitives, TanStack Query + axios. Brand shell (Poppins, brand colours, ImageKit
+  logo, gradient footer bar). Verified end-to-end in-browser (analyze → edit plan →
+  generate → download) on 09 Sep 2026. `npm run build` passes.
+
+**Not done:**
+- ⬜ Phase 4 — deploy to Cloud Run behind IAP. **Nothing is deployed; no CI/CD workflow
+  exists yet** (GitHub Actions tab is empty by design).
+
+**Open decision (user to choose):** deploy the API now for a live URL, OR build the UI
+first then deploy web+api together, OR just add a CI test workflow. User dismissed this
+choice on 09 Sep — awaiting direction next session.
+
+**Run locally:** `cd power-ppt-api && python -m pytest -q` (tests) ·
+`python -m uvicorn app.main:app --port 8077` then hit `/health`, `/docs`.
+Note: dev machine is Windows + Python 3.14; keep Pillow ≥12.2 (global `pdfplumber` needs it).
+
+---
+
 ## Purpose
 
 PowerPPT reformats arbitrary PowerPoint decks into the authorised Salasar brand
@@ -172,9 +205,11 @@ waits for the re-platform rather than investing in throwaway Streamlit UI.
    stack-agnostic Python module. 12 golden tests. (`app/brand_engine/`)
 2. ✅ **Thin FastAPI service** wrapping the engine (`/analyze`, `/generate`,
    `/health`); OCR lazy-loaded; Dockerfile + settings. 5 API tests. (`app/api/`)
-3. **Vite/shadcn UI** (upload → review → export) against the API, reusing
-   `nexus-web`'s Tailwind config + shadcn components + Poppins tokens.  ← NEXT
-4. **Deploy** to `power-ppt-486306` behind IAP; Docker → Cloud Run; CI/CD.
+3. ✅ **Vite/shadcn UI** (upload → review → export) against the API (`power-ppt-web/`).
+   Brand tokens applied directly (no local `nexus-web` source found on this machine —
+   only Nexus docs). Router/unused shadcn parts trimmed per D6. 5 primitives, 2 flow
+   components, typed API client mirroring the FastAPI schemas.
+4. **Deploy** to `power-ppt-486306` behind IAP; Docker → Cloud Run; CI/CD.  ← NEXT
 5. Package 3 hygiene folded in (pagination fix ✅, dep pinning ✅, golden tests ✅,
    runbook).
 6. **v2 — AI Generate mode** (Gemini, guardrailed), from the stable deployed base.
