@@ -25,7 +25,16 @@ GCloud project: `power-ppt-486306`.
   logo, gradient footer bar). Verified end-to-end in-browser (analyze → edit plan →
   generate → download) on 09 Sep 2026. `npm run build` passes.
 
-**Phase 4 — in progress (artifacts ready, not yet deployed):**
+**Phase 4 — DEPLOYED & LIVE (10 Sep 2026):**
+- ✅ Live on Cloud Run: service `power-ppt`, region `asia-south1`, revision
+  `power-ppt-00001-dll`, URL `https://power-ppt-ocqfvmvafq-el.a.run.app`. Verified
+  authenticated `/health` → 200 and `/` → SPA. Currently `--no-allow-unauthenticated`
+  (private; needs `roles/run.invoker`). Billing linked to master acct
+  `013E06-60423A-9CC7FA`. Build fix on record: granted the default compute SA
+  `400070465780-compute@developer.gserviceaccount.com` `roles/cloudbuild.builds.builder`.
+- ⬜ Still to do: **IAP** (gate by org users instead of raw run.invoker) + optional CI/CD.
+
+**Phase 4 build artifacts (pushed, commit 313b817):**
 - ✅ Topology decided: **single Cloud Run service** — FastAPI serves the built SPA
   (`web_static/`) at `/` and the API at root; conditional static mount keeps the 17
   tests green. Verified locally (SPA at `/`, `/health` API wins). CI/CD deferred
