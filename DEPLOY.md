@@ -91,6 +91,32 @@ gcloud run services update power-ppt --region asia-south1 \
 
 ---
 
+### Document AI (A3 — image-of-a-table → native editable table)
+
+Auth is the Cloud Run runtime service account (ADC) — no key file.
+
+1. Enable the API:
+   ```bash
+   gcloud services enable documentai.googleapis.com
+   ```
+2. Create a **Form Parser** processor (Console → Document AI → Create Processor →
+   Form Parser), region `us` or `eu`. Copy the **Processor ID**.
+3. Grant the runtime service account access:
+   ```bash
+   gcloud projects add-iam-policy-binding power-ppt-486306 \
+     --member="serviceAccount:400070465780-compute@developer.gserviceaccount.com" \
+     --role="roles/documentai.apiUser"
+   ```
+4. Point the service at the processor:
+   ```bash
+   gcloud run services update power-ppt --region asia-south1 --set-env-vars \
+     POWERPPT_DOCAI_PROJECT=power-ppt-486306,POWERPPT_DOCAI_LOCATION=us,POWERPPT_DOCAI_PROCESSOR_ID=<PROCESSOR_ID>
+   ```
+
+When set, an uploaded image that Document AI detects as a table is converted to a
+native editable table and the image is dropped; other images pass through unchanged.
+Unset → images are always kept as-is (no table OCR). Billed per page.
+
 ## 4. Run locally (dev)
 
 Two processes: FastAPI on :8077, Vite on :5173 (Vite proxies the API routes).

@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     ocr_enabled_default: bool = True
     ocr_backend: str = "auto"
 
+    # Google Document AI — image-of-a-table -> native table (A3). Uses the runtime
+    # service account (ADC); no key file. Configured = project + processor_id set.
+    docai_project: str | None = None
+    docai_location: str = "us"          # processor region, e.g. us | eu
+    docai_processor_id: str | None = None
+
     # Secrets (prefer Secret Manager in prod)
     google_service_account_json: str | None = None
     aws_access_key_id: str | None = None

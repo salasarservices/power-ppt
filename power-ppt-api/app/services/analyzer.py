@@ -1,30 +1,27 @@
 """
-Turn an uploaded PPTX into a SlidePlan: extract editable title/body/tables, and
-(optionally) OCR image-only slides. OCR dependencies are imported lazily so the API
-runs even when they are not installed — a missing OCR stack degrades to a warning,
-never a crash (roadmap: surface OCR failures, don't swallow them).
+Turn an uploaded PPTX into a SlidePlan: extract editable title/body/tables, carry
+source images, and (optionally) OCR. Two OCR roles:
+  - Document AI (A3): an image that is actually a table becomes a native table and
+    the image is dropped.
+  - Tesseract/cloud text OCR: pull text off an otherwise text-empty image slide.
+OCR dependencies are imported lazily so the API runs even when they are not
+installed — a missing OCR stack degrades to a warning, never a crash.
 """
 
 import base64
 
+from ..core.config import Settings
 from ..schemas import Image, Page, SlidePlan, Table
 
 
-def _source_images(meta) -> list[Image]:
-    """Carry the slide's source images into the plan (base64) so the brand engine
-    re-places them in the content zone."""
-    out: list[Image] = []
-    for img in meta.get("image_shapes", []):
-        data = img.get("image_bytes")
-        if not data:
-            continue
-        out.append(
-            Image(
-                data=base64.b64encode(data).decode("ascii"),
-                content_type=img.get("content_type") or "image/png",
-            )
-        )
-    return out
+def _to_image(img) -> Image | None:
+    data = img.get("image_bytes")
+    if not data:
+        return None
+    return Image(
+        data=base64.b64encode(data).decode("ascii"),
+        content_type=img.get("content_type") or "image/png",
+    )
 
 
 def _native_tables(meta) -> list[Table]:
@@ -45,6 +42,7 @@ def analyze_pptx(
     use_ocr: bool = False,
     backend: str = "auto",
     always_ocr: bool = False,
+    settings: Settings | None = None,
 ) -> tuple[SlidePlan, list[str]]:
     from ..extract import pptx_reader
 
@@ -62,6 +60,14 @@ def analyze_pptx(
             warnings.append(f"OCR unavailable ({e}); proceeding without OCR.")
             use_ocr = False
 
+    # Document AI (A3) — image-of-a-table -> native table.
+    docai = None
+    if use_ocr and settings is not None:
+        from ..ocr import docai as _docai
+
+        if _docai.is_configured(settings):
+            docai = _docai
+
     pages: list[Page] = []
     for meta in slides_meta:
         idx = meta.get("slide_index", 0)
@@ -69,8 +75,26 @@ def analyze_pptx(
         body = meta.get("body_text", "") or ""
         tables = _native_tables(meta)
 
+        # First pass: convert any image that is really a table; keep the rest.
+        kept_images: list[dict] = []
+        for img in meta.get("image_shapes", []):
+            consumed = False
+            if docai is not None:
+                try:
+                    found = docai.image_to_tables(
+                        img["image_bytes"], img.get("content_type"), settings
+                    )
+                    if found:
+                        tables.extend(found)
+                        consumed = True
+                except Exception as e:
+                    warnings.append(f"Slide {idx + 1}: table OCR failed ({e}).")
+            if not consumed:
+                kept_images.append(img)
+
+        # Second pass: text OCR on a text-empty slide's remaining images.
         if use_ocr and (not body.strip() or always_ocr):
-            for img in meta.get("image_shapes", []):
+            for img in kept_images:
                 try:
                     processed = preprocess(img["image_bytes"])
                     result = ocr_image(processed, backend=backend)
@@ -83,6 +107,7 @@ def analyze_pptx(
                 except Exception as e:
                     warnings.append(f"Slide {idx + 1}: OCR failed ({e}).")
 
-        pages.append(Page(title=title, body=body, tables=tables, images=_source_images(meta)))
+        images = [im for im in (_to_image(i) for i in kept_images) if im is not None]
+        pages.append(Page(title=title, body=body, tables=tables, images=images))
 
     return SlidePlan(pages=pages), warnings

@@ -105,8 +105,12 @@ image — no drag/resize v1); preview = **actual LibreOffice render**.
   (textarea), table (editable cells + floating +Row/-Row/+Col/-Col), image
   (Replace/Remove). DeckEditor owns editable Deck state; Generate renders the edits.
   Verified in-browser (body edit persists; table +Row grows).
-- ⬜ A3 — image-format table -> native table (gated on OCR provider choice: Google
-  Document AI vs Textract + credentials; also fixes bug #4).
+- ✅ **A3 — image-format table -> native table** (code done): Google Document AI (Form
+  Parser). `app/ocr/docai.py` (`parse_tables` pure/testable, `image_to_tables` via ADC —
+  no key). Analyzer converts an image detected as a table into a native `Table` and drops
+  the image; other images pass through. Config `POWERPPT_DOCAI_*`; 3 unit tests; 33 pass.
+  **Activation pending (user):** enable `documentai.googleapis.com`, create a Form Parser
+  processor, grant the runtime SA `roles/documentai.apiUser`, set the env vars (DEPLOY.md).
 - ⬜ Deploy the new editor: the live Cloud Run service still serves the Phase-3 UI —
   redeploy (`gcloud run deploy ... --source .`) once the editor is signed off.
 - ⬜ Package 3 cleanup: remove dead `paginator.split_by_paragraphs` (superseded by flow).

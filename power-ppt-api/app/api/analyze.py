@@ -22,6 +22,6 @@ async def analyze(
     enabled = s.ocr_enabled_default if use_ocr is None else use_ocr
 
     plan, warnings = analyze_pptx(
-        data, use_ocr=enabled, backend=s.ocr_backend, always_ocr=always_ocr
+        data, use_ocr=enabled, backend=s.ocr_backend, always_ocr=always_ocr, settings=s
     )
     return AnalyzeResponse(slides=len(plan.pages), warnings=warnings, plan=plan)
