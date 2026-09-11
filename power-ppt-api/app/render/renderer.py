@@ -46,3 +46,20 @@ def pptx_to_pdf(pptx_bytes: bytes, soffice_bin: str | None = None, timeout: int 
             raise RenderError("LibreOffice produced no PDF.")
         with open(out, "rb") as f:
             return f.read()
+
+
+def split_pdf_pages(pdf_bytes: bytes) -> list[bytes]:
+    """Split a PDF into one single-page PDF per page (for per-slide AI extraction)."""
+    import fitz  # PyMuPDF, lazy
+
+    pages: list[bytes] = []
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+    try:
+        for i in range(doc.page_count):
+            one = fitz.open()
+            one.insert_pdf(doc, from_page=i, to_page=i)
+            pages.append(one.tobytes())
+            one.close()
+    finally:
+        doc.close()
+    return pages

@@ -32,6 +32,7 @@ api = [
 # system dependency (installed in the image), not a Python package.
 ai = [
     "google-genai>=1.0,<2",
+    "pymupdf>=1.24,<2",
 ]
 dev = [
     "pytest>=8,<9",

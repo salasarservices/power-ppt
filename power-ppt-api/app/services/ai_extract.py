@@ -36,13 +36,12 @@ def enrich_plan(native: SlidePlan, pptx_bytes: bytes, s: Settings) -> tuple[Slid
 
     merged: list[Page] = []
     for np, ap in zip(native.pages, ai_pages):
-        if _native_sufficient(np):
-            merged.append(np)                       # native already carries its images
-        else:
-            merged.append(Page(
-                title=ap.title or np.title,
-                body=ap.body,
-                tables=ap.tables or np.tables,
-                images=np.images,                   # keep source figures/charts
-            ))
+        # Per-field merge: native wins where it has real content (it's exact and
+        # editable), AI fills the gaps. Native images are always kept.
+        merged.append(Page(
+            title=np.title or ap.title,
+            body=np.body if len(np.body.strip()) >= 40 else (ap.body or np.body),
+            tables=np.tables or ap.tables,
+            images=np.images,
+        ))
     return SlidePlan(pages=merged), warnings

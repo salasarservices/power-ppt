@@ -27,7 +27,8 @@ RUN pip install --no-cache-dir \
     "pydantic-settings>=2.3,<3" "python-multipart>=0.0.9,<0.1" \
     "opencv-python-headless>=4.9,<5" "numpy>=1.26,<3" \
     "google-cloud-vision>=3.7,<4" "google-cloud-documentai>=2.20,<4" \
-    "pytesseract>=0.3.10,<0.4" "boto3>=1.34,<2" "google-genai>=1.0,<2"
+    "pytesseract>=0.3.10,<0.4" "boto3>=1.34,<2" \
+    "google-genai>=1.0,<2" "pymupdf>=1.24,<2"
 
 COPY power-ppt-api/app ./app
 COPY power-ppt-api/templates ./templates
