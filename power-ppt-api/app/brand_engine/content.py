@@ -1,10 +1,10 @@
 """
-Content-zone rendering (brand spec). Body, tables and images are stacked
-top-to-bottom in the white content zone with a shared y-cursor, so a slide can
-carry text AND a table AND images together without overlap:
+Content-zone rendering (brand spec). Body, tables and images are placed at an
+explicit (left, top, width) computed by the flow planner, so objects can sit
+side-by-side (e.g. a table beside an image) as well as stacked:
   body  — Poppins Regular, slate, 12pt, line-height 1.6, left-aligned, verbatim.
   table — header row blue fill / white Poppins Semi-Bold; body Poppins Regular slate.
-  image — source image, aspect-preserved, auto-fit to the content width/height.
+  image — source image, aspect-preserved, fit to the given cell width/height.
 """
 
 import io
@@ -12,16 +12,17 @@ import math
 
 from PIL import Image as PILImage
 from pptx.enum.text import MSO_AUTO_SIZE
-from pptx.util import Emu, Inches, Pt
+from pptx.util import Inches, Pt
 
 from . import geometry as g
 
 
-def _estimate_body_height_in(body: str) -> float:
-    """Font-file-free estimate of rendered body height (inches). Slightly generous
-    so the next stacked block never overlaps the text."""
+# ── height estimators (shared with the flow planner) ─────────────────────────
+def estimate_body_height_in(body: str, width: float = g.BODY_WIDTH) -> float:
+    """Font-file-free estimate of rendered body height (inches), slightly generous
+    so the next block never overlaps the text."""
     char_w_in = 0.5 * g.BODY_SIZE_PT / 72.0          # ~0.5em average glyph advance
-    cpl = max(1, int(g.BODY_WIDTH / char_w_in))       # chars per line
+    cpl = max(1, int(width / char_w_in))              # chars per line at this width
     line_h_in = g.BODY_SIZE_PT * g.LINE_SPACING / 72.0
     lines = 0.0
     for para in body.split("\n\n"):
@@ -33,12 +34,28 @@ def _estimate_body_height_in(body: str) -> float:
     return lines * line_h_in
 
 
-def render_body(slide, body: str, top: float, height: float) -> None:
+def estimate_table_height_in(table) -> float:
+    return len(list(table.rows or [])) * g.TABLE_ROW_H
+
+
+def estimate_image_height_in(image_bytes: bytes, width: float = g.BODY_WIDTH) -> float:
+    """Height when the image is fit to `width` (aspect-preserved)."""
+    try:
+        with PILImage.open(io.BytesIO(image_bytes)) as im:
+            iw, ih = im.size
+    except Exception:
+        return 0.0
+    if not iw or not ih:
+        return 0.0
+    return width * (ih / iw)
+
+
+# ── renderers (position + width supplied by the flow planner) ────────────────
+def render_body(slide, body: str, top: float, height: float,
+                left: float = g.BODY_LEFT, width: float = g.BODY_WIDTH) -> None:
     if not body or not body.strip():
         return
-    box = slide.shapes.add_textbox(
-        Inches(g.BODY_LEFT), Inches(top), Inches(g.BODY_WIDTH), Inches(height)
-    )
+    box = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
     tf = box.text_frame
     tf.word_wrap = True
     tf.auto_size = MSO_AUTO_SIZE.NONE
@@ -58,8 +75,8 @@ def render_body(slide, body: str, top: float, height: float) -> None:
             run.font.color.rgb = g.SLATE
 
 
-def render_table(slide, table, top: float) -> float:
-    """Render a table at `top`; return the vertical space used (inches)."""
+def render_table(slide, table, top: float,
+                 left: float = g.BODY_LEFT, width: float = g.BODY_WIDTH) -> float:
     rows = list(table.rows or [])
     if not rows:
         return 0.0
@@ -70,9 +87,7 @@ def render_table(slide, table, top: float) -> float:
 
     height = n_rows * g.TABLE_ROW_H
     shape = slide.shapes.add_table(
-        n_rows, n_cols,
-        Inches(g.BODY_LEFT), Inches(top),
-        Inches(g.BODY_WIDTH), Inches(height),
+        n_rows, n_cols, Inches(left), Inches(top), Inches(width), Inches(height)
     )
     tbl = shape.table
     for r_idx, row in enumerate(rows):
@@ -95,9 +110,10 @@ def render_table(slide, table, top: float) -> float:
     return height
 
 
-def render_image(slide, image_bytes: bytes, top: float, zone_bottom: float) -> float:
-    """Place a source image at `top`, aspect-preserved, fit to the content width
-    and the remaining height. Returns the vertical space used (inches); 0 if no room."""
+def render_image(slide, image_bytes: bytes, top: float, zone_bottom: float,
+                 left: float = g.BODY_LEFT, width: float = g.BODY_WIDTH) -> float:
+    """Fit an image into a cell of `width`, aspect-preserved, clamped to the
+    remaining zone height. Returns the vertical space used (inches)."""
     avail_h = zone_bottom - top
     if avail_h < 0.3:
         return 0.0
@@ -110,55 +126,25 @@ def render_image(slide, image_bytes: bytes, top: float, zone_bottom: float) -> f
         return 0.0
 
     aspect = iw / ih
-    width = g.BODY_WIDTH
-    height = width / aspect
-    if height > avail_h:                     # too tall -> clamp to remaining height
-        height = avail_h
-        width = height * aspect
-    slide.shapes.add_picture(
-        io.BytesIO(image_bytes),
-        Inches(g.BODY_LEFT), Inches(top),
-        Inches(width), Inches(height),
-    )
-    return height
+    w = width
+    h = w / aspect
+    if h > avail_h:                          # too tall -> clamp, keep aspect
+        h = avail_h
+        w = h * aspect
+    slide.shapes.add_picture(io.BytesIO(image_bytes), Inches(left), Inches(top),
+                             Inches(w), Inches(h))
+    return h
 
 
-# ── height estimators (shared with the flow planner) ─────────────────────────
-def estimate_body_height_in(body: str) -> float:
-    return _estimate_body_height_in(body)
-
-
-def estimate_table_height_in(table) -> float:
-    return len(list(table.rows or [])) * g.TABLE_ROW_H
-
-
-def estimate_image_height_in(image_bytes: bytes) -> float:
-    """Height when the image is fit to the content width (aspect-preserved)."""
-    try:
-        with PILImage.open(io.BytesIO(image_bytes)) as im:
-            iw, ih = im.size
-    except Exception:
-        return 0.0
-    if not iw or not ih:
-        return 0.0
-    return g.BODY_WIDTH * (ih / iw)
-
-
-# ── block renderer (blocks are pre-sized to fit by the flow planner) ──────────
-def render_blocks(slide, blocks) -> None:
-    """Render a slide's flowed blocks top-to-bottom. Each block is
-    ("body", str) | ("table", Table) | ("image", bytes)."""
-    y = g.BODY_TOP
-    for kind, payload in blocks:
+# ── placement renderer ───────────────────────────────────────────────────────
+def render_placements(slide, placements) -> None:
+    """Render pre-positioned placements. Each is a dict with keys
+    kind ('body'|'table'|'image'), payload, left, top, width (+ height for body)."""
+    for p in placements:
+        kind = p["kind"]
         if kind == "body":
-            h = min(_estimate_body_height_in(payload), g.BODY_BOTTOM - y)
-            render_body(slide, payload, y, h)
-            y += h + g.CONTENT_GAP
+            render_body(slide, p["payload"], p["top"], p["height"], p["left"], p["width"])
         elif kind == "table":
-            used = render_table(slide, payload, y)
-            if used > 0:
-                y += used + g.CONTENT_GAP
+            render_table(slide, p["payload"], p["top"], p["left"], p["width"])
         elif kind == "image":
-            used = render_image(slide, payload, y, g.BODY_BOTTOM)
-            if used > 0:
-                y += used + g.CONTENT_GAP
+            render_image(slide, p["payload"], p["top"], g.BODY_BOTTOM, p["left"], p["width"])

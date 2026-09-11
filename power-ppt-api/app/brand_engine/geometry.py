@@ -39,6 +39,9 @@ BODY_BOTTOM = 6.83          # footer top 7.03 - 0.20 margin
 BODY_HEIGHT = BODY_BOTTOM - BODY_TOP   # 5.28
 CONTENT_GAP = 0.15          # vertical gap between stacked blocks (body/table/image)
 TABLE_ROW_H = 0.34          # nominal table row height (inches)
+COL_GUTTER = 0.30           # horizontal gap between side-by-side objects
+HALF_WIDTH = (BODY_WIDTH - COL_GUTTER) / 2   # cell width when two share a row
+HALF_TABLE_MAX_COLS = 4     # tables wider than this stay full-width (won't pair)
 
 # ── Colours (brand) ─────────────────────────────────────────────────────────
 BLUE = RGBColor(0x1A, 0x3A, 0x8F)

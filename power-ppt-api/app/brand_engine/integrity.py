@@ -52,9 +52,9 @@ def _template_image_hashes(template_path):
 
 
 def _spec_body(spec) -> str:
-    """Reconstruct the body text a slide spec should contain from its blocks."""
+    """Reconstruct the body text a slide spec should contain from its placements."""
     return "\n\n".join(
-        payload for kind, payload in spec.get("blocks", []) if kind == "body"
+        p["payload"] for p in spec.get("placements", []) if p.get("kind") == "body"
     )
 
 

@@ -7,7 +7,7 @@ returning bytes.
 
 import io
 
-from .content import render_blocks
+from .content import render_placements
 from .errors import BrandEngineError
 from .flow import flow_pages
 from .heading import render_heading
@@ -39,7 +39,7 @@ def build_deck(plan, template_path) -> bytes:
         slide = clone_content_slide(prs, source_idx=0)
         remove_slide_number_fields(slide)
         render_heading(slide, spec["title"])
-        render_blocks(slide, spec["blocks"])
+        render_placements(slide, spec["placements"])
         fix_shape_ids(slide)
 
     # Remove the original template slides (still at the front).

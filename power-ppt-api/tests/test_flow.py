@@ -21,7 +21,7 @@ def _titles(specs):
 
 
 def _kinds(spec):
-    return [k for k, _ in spec["blocks"]]
+    return [p["kind"] for p in spec["placements"]]
 
 
 def test_short_page_stays_single_slide():
@@ -44,8 +44,9 @@ def test_table_splits_by_rows_and_repeats_header():
     assert len(specs) > 1
     total_data = 0
     for spec in specs:
-        for kind, tbl in spec["blocks"]:
-            assert kind == "table"
+        for p in spec["placements"]:
+            assert p["kind"] == "table"
+            tbl = p["payload"]
             assert tbl.rows[0] == ["Sr", "Item"]   # header repeated on every part
             total_data += len(tbl.rows) - 1
     assert total_data == 40                          # no rows lost
@@ -67,8 +68,34 @@ def test_oversized_single_paragraph_is_split():
     assert all("body" in _kinds(s) for s in specs)
 
 
+def test_table_and_image_pack_side_by_side():
+    # a small table + an image should share one row (same top, different lefts),
+    # each at half width, below the body.
+    table = Table(header=["A", "B"], rows=[["A", "B"], ["1", "2"]])
+    specs = flow_pages([Page(title="Mix", body="Intro line.",
+                             tables=[table], images=[Image(data=_img_b64())])])
+    assert len(specs) == 1
+    pls = specs[0]["placements"]
+    tbl = next(p for p in pls if p["kind"] == "table")
+    img = next(p for p in pls if p["kind"] == "image")
+    assert abs(tbl["top"] - img["top"]) < 1e-6          # same row
+    assert tbl["left"] < img["left"]                     # side by side
+    assert abs(tbl["width"] - g.HALF_WIDTH) < 1e-6       # half width each
+    assert abs(img["width"] - g.HALF_WIDTH) < 1e-6
+    body = next(p for p in pls if p["kind"] == "body")
+    assert body["top"] < tbl["top"]                      # text above the row
+
+
+def test_wide_table_stays_full_width():
+    wide = Table(header=list("ABCDEF"), rows=[list("ABCDEF"), list("123456")])
+    specs = flow_pages([Page(title="Wide", tables=[wide], images=[Image(data=_img_b64())])])
+    pls = specs[0]["placements"]
+    tbl = next(p for p in pls if p["kind"] == "table")
+    assert abs(tbl["width"] - g.BODY_WIDTH) < 1e-6       # 6 cols -> not paired
+
+
 def test_empty_page_yields_one_titled_slide():
     specs = flow_pages([Page(title="Section only")])
     assert len(specs) == 1
     assert specs[0]["title"] == "Section only"
-    assert specs[0]["blocks"] == []
+    assert specs[0]["placements"] == []
