@@ -113,7 +113,29 @@ image — no drag/resize v1); preview = **actual LibreOffice render**.
   processor, grant the runtime SA `roles/documentai.apiUser`, set the env vars (DEPLOY.md).
 - ⬜ Deploy the new editor: the live Cloud Run service still serves the Phase-3 UI —
   redeploy (`gcloud run deploy ... --source .`) once the editor is signed off.
-- ⬜ Package 3 cleanup: remove dead `paginator.split_by_paragraphs` (superseded by flow).
+- ✅ Package 3 cleanup: removed dead `paginator.py` (commit c1a9889).
+
+## Extraction pipeline — tiered (handles text, text-in-image, tables, tables-in-image)
+
+Trigger: a fully-designed 47-slide client deck (BCM) reformatted to near-empty output —
+its content is baked into 41 freeform + 23 picture shapes, only ~519 chars of live text
+across the deck. No single extractor covers every deck; the fix is tiers, reconciled.
+
+- ✅ **Phase 1 — native hardening** (commit dc4f5d9): `pptx_reader` recurses groups,
+  reads all shape/freeform text frames, ignores chrome placeholders (slide number/
+  footer/date/header), no "Slide N" fallback. Fixes pollution + bug #5.
+- ✅ **Phase 2 — render** (`app/render/renderer.py`): LibreOffice `soffice` PPTX->PDF
+  (`libreoffice-impress` added to the image).
+- ✅ **Phase 3 — Vertex AI Gemini extraction** (`app/ai/gemini.py` + reconciler
+  `app/services/ai_extract.py`): render deck -> Gemini transcribes each slide to
+  structured JSON (text/tables); reconciler keeps native where sufficient, uses AI for
+  content-poor slides, always preserves native source images. `/analyze?use_ai=true`.
+  **COMPLIANCE: Vertex only (no-train), transcribe-not-invent.** 7 unit tests (parser +
+  reconciler mocked); 40 pass. **Activation pending USER:** enable aiplatform API, grant
+  SA roles/aiplatform.user, set POWERPPT_VERTEX_* env, redeploy (LibreOffice + genai in
+  image). Live Vertex/LibreOffice calls unverified until deployed.
+- ⬜ Phase 4 (future): crop AI-detected figure regions as images; whole-slide-image
+  fallback for un-structurable slides.
 
 ## Purpose
 

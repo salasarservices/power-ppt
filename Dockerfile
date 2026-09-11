@@ -14,9 +14,10 @@ RUN npm run build   # -> /web/dist
 FROM python:3.12-slim
 WORKDIR /app
 
-# System libs for opencv-python-headless (OCR preprocessing) + tesseract.
+# System libs: opencv (OCR preprocessing) + tesseract; LibreOffice Impress renders
+# PPTX->PDF for Tier-2 Vertex AI Gemini extraction of picture/freeform decks.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libglib2.0-0 libgl1 tesseract-ocr \
+    libglib2.0-0 libgl1 tesseract-ocr libreoffice-impress \
     && rm -rf /var/lib/apt/lists/*
 
 # Dependencies (pinned; core + api + ocr). Kept explicit to match pyproject.
@@ -26,7 +27,7 @@ RUN pip install --no-cache-dir \
     "pydantic-settings>=2.3,<3" "python-multipart>=0.0.9,<0.1" \
     "opencv-python-headless>=4.9,<5" "numpy>=1.26,<3" \
     "google-cloud-vision>=3.7,<4" "google-cloud-documentai>=2.20,<4" \
-    "pytesseract>=0.3.10,<0.4" "boto3>=1.34,<2"
+    "pytesseract>=0.3.10,<0.4" "boto3>=1.34,<2" "google-genai>=1.0,<2"
 
 COPY power-ppt-api/app ./app
 COPY power-ppt-api/templates ./templates

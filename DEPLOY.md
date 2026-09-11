@@ -117,6 +117,34 @@ When set, an uploaded image that Document AI detects as a table is converted to 
 native editable table and the image is dropped; other images pass through unchanged.
 Unset → images are always kept as-is (no table OCR). Billed per page.
 
+### Tier-2 AI extraction — Vertex AI Gemini (picture / freeform decks)
+
+For decks whose text/tables are baked into pictures or vector art (native extraction
+can't read them), the API renders the deck to PDF (LibreOffice, already in the image)
+and asks **Vertex AI Gemini** to transcribe each slide, merging only where native
+came up short. **Compliance: Vertex only (enterprise, no-train); the model is
+instructed to transcribe, never invent. Client decks are permitted on Vertex; free-tier
+Gemini/AI Studio is not.**
+
+1. Enable Vertex AI:
+   ```bash
+   gcloud services enable aiplatform.googleapis.com
+   ```
+2. Grant the runtime service account:
+   ```bash
+   gcloud projects add-iam-policy-binding power-ppt-486306 \
+     --member="serviceAccount:400070465780-compute@developer.gserviceaccount.com" \
+     --role="roles/aiplatform.user"
+   ```
+3. Point the service at Vertex + turn it on:
+   ```bash
+   gcloud run services update power-ppt --region asia-south1 --set-env-vars \
+     POWERPPT_VERTEX_PROJECT=power-ppt-486306,POWERPPT_VERTEX_LOCATION=us-central1,POWERPPT_VERTEX_MODEL=gemini-2.0-flash-001,POWERPPT_AI_EXTRACT_DEFAULT=true
+   ```
+
+Per-request override: `POST /analyze?use_ai=true` (or `false`). Billed per deck by
+token/page; renders + one Gemini call per upload. Unset/unconfigured → native only.
+
 ## 4. Run locally (dev)
 
 Two processes: FastAPI on :8077, Vite on :5173 (Vite proxies the API routes).

@@ -28,6 +28,11 @@ api = [
     "pydantic-settings>=2.3,<3",
     "python-multipart>=0.0.9,<0.1",
 ]
+# Tier-2 AI extraction (render + Vertex AI Gemini). LibreOffice (soffice) is a
+# system dependency (installed in the image), not a Python package.
+ai = [
+    "google-genai>=1.0,<2",
+]
 dev = [
     "pytest>=8,<9",
     "httpx>=0.27,<0.29",

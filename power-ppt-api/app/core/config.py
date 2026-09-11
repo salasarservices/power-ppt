@@ -40,6 +40,14 @@ class Settings(BaseSettings):
     docai_location: str = "us"          # processor region, e.g. us | eu
     docai_processor_id: str | None = None
 
+    # Tier-2 AI extraction (render + Vertex AI Gemini) for picture/freeform decks.
+    # COMPLIANCE: Vertex only (enterprise, no-train). Configured = vertex_project set.
+    vertex_project: str | None = None
+    vertex_location: str = "us-central1"
+    vertex_model: str = "gemini-2.0-flash-001"
+    ai_extract_default: bool = False    # run AI extraction unless the request overrides
+    soffice_bin: str | None = None      # LibreOffice path override (else PATH)
+
     # Secrets (prefer Secret Manager in prod)
     google_service_account_json: str | None = None
     aws_access_key_id: str | None = None
