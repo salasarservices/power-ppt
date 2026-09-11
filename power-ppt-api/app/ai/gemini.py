@@ -51,9 +51,8 @@ def parse_response(text: str) -> list[Page]:
     return pages
 
 
-def extract_pages(pdf_bytes: bytes, s: Settings) -> list[Page]:
-    """Send the rendered deck PDF to Vertex AI Gemini; return structured pages.
-    Raises on library/API errors so the caller can warn and fall back to native."""
+def extract_raw(pdf_bytes: bytes, s: Settings) -> str:
+    """Send the rendered deck PDF to Vertex AI Gemini; return the raw JSON text."""
     from google import genai            # google-genai SDK, lazy
     from google.genai import types
 
@@ -67,9 +66,16 @@ def extract_pages(pdf_bytes: bytes, s: Settings) -> list[Page]:
         config=types.GenerateContentConfig(
             response_mime_type="application/json",
             temperature=0,
+            max_output_tokens=32768,
         ),
     )
-    return parse_response(resp.text or "{}")
+    return resp.text or "{}"
+
+
+def extract_pages(pdf_bytes: bytes, s: Settings) -> list[Page]:
+    """Structured pages from Vertex AI Gemini. Raises on library/API errors so the
+    caller can warn and fall back to native."""
+    return parse_response(extract_raw(pdf_bytes, s))
 
 
 def extract_plan(pdf_bytes: bytes, s: Settings) -> SlidePlan:

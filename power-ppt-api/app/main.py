@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from .api import analyze, generate, health, layout, render
+from .api import aidebug, analyze, generate, health, layout, render
 from .core.config import get_settings
 
 
@@ -25,6 +25,7 @@ def create_app() -> FastAPI:
     app.include_router(generate.router, tags=["generate"])
     app.include_router(layout.router, tags=["layout"])
     app.include_router(render.router, tags=["render"])
+    app.include_router(aidebug.router, tags=["debug"])
 
     # Single-service topology: if a built SPA is bundled (in the Cloud Run image),
     # serve it at root. Skipped in local/test runs where the dir doesn't exist.
