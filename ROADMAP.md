@@ -97,10 +97,19 @@ image — no drag/resize v1); preview = **actual LibreOffice render**.
   pptx`; `build_deck = flow_deck + render_deck`. New endpoints `POST /layout` (SlidePlan
   ->Deck) and `POST /render` (Deck->pptx, WYSIWYG). Edit round-trip tested. **30 tests
   pass.**
-- ⬜ D — carousel + inline-edit UI: SVG/HTML canvas from Placement JSON, one slide at a
-  time, arrows, double-click an object to edit (text/table cell/replace-remove image),
-  then POST /render to download. Replaces the current PlanReview UI.
-- ⬜ A3 — image-format table -> native table (gated on OCR provider choice).
+- ✅ **D1 — slide canvas + nav** (commit a12d40a): `SlideCanvas` renders a Deck slide
+  faithfully from Placement JSON (CSS container units; heading split, body, tables,
+  images, logo, footer bar). `DeckEditor`: one slide at a time, arrows + ←/→ keys,
+  counter, Generate -> /render -> download. Replaced PlanReview. Verified in-browser.
+- ✅ **D2 — inline editors** (commit 54c3b22): double-click any object to edit — body
+  (textarea), table (editable cells + floating +Row/-Row/+Col/-Col), image
+  (Replace/Remove). DeckEditor owns editable Deck state; Generate renders the edits.
+  Verified in-browser (body edit persists; table +Row grows).
+- ⬜ A3 — image-format table -> native table (gated on OCR provider choice: Google
+  Document AI vs Textract + credentials; also fixes bug #4).
+- ⬜ Deploy the new editor: the live Cloud Run service still serves the Phase-3 UI —
+  redeploy (`gcloud run deploy ... --source .`) once the editor is signed off.
+- ⬜ Package 3 cleanup: remove dead `paginator.split_by_paragraphs` (superseded by flow).
 
 ## Purpose
 
