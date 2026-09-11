@@ -37,6 +37,8 @@ BODY_TOP = 1.55
 BODY_WIDTH = 11.83          # 0.75 -> 12.58
 BODY_BOTTOM = 6.83          # footer top 7.03 - 0.20 margin
 BODY_HEIGHT = BODY_BOTTOM - BODY_TOP   # 5.28
+CONTENT_GAP = 0.15          # vertical gap between stacked blocks (body/table/image)
+TABLE_ROW_H = 0.34          # nominal table row height (inches)
 
 # ── Colours (brand) ─────────────────────────────────────────────────────────
 BLUE = RGBColor(0x1A, 0x3A, 0x8F)

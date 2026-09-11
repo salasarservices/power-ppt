@@ -4,11 +4,12 @@ bundled template. Handles body-overflow pagination and runs the integrity guards
 before returning bytes.
 """
 
+import base64
 import io
 
 from ..paginator import split_by_paragraphs
 from . import geometry as g
-from .content import render_body, render_table
+from .content import render_content
 from .errors import BrandEngineError
 from .heading import render_heading
 from .integrity import verify_output
@@ -21,19 +22,32 @@ from .template import (
 )
 
 
+def _decode_images(page) -> list[bytes]:
+    """Decode a page's base64 images to raw bytes; skip any that don't decode."""
+    out: list[bytes] = []
+    for img in getattr(page, "images", None) or []:
+        try:
+            out.append(base64.b64decode(img.data))
+        except Exception:
+            pass
+    return out
+
+
 def _expand_pages(plan) -> list[dict]:
     """
-    Flatten a SlidePlan into rendered pages, paginating long bodies. A page with
-    tables is kept whole (tables are not paginated in v1).
+    Flatten a SlidePlan into rendered pages, paginating long bodies. A page that
+    carries tables or images is kept whole (only plain-body pages paginate), so
+    body + tables + images always render together on one slide.
     """
     out: list[dict] = []
     for page in plan.pages:
         title = page.title or ""
         tables = list(page.tables or [])
+        images = _decode_images(page)
         body = page.body or ""
 
-        if tables:
-            out.append({"title": title, "body": body, "tables": tables})
+        if tables or images:
+            out.append({"title": title, "body": body, "tables": tables, "images": images})
             continue
 
         chunks = (
@@ -46,7 +60,7 @@ def _expand_pages(plan) -> list[dict]:
                 page_title = title
             else:
                 page_title = (title + g.CONTINUATION_SUFFIX) if title else ""
-            out.append({"title": page_title, "body": chunk, "tables": []})
+            out.append({"title": page_title, "body": chunk, "tables": [], "images": []})
 
     return out
 
@@ -69,11 +83,7 @@ def build_deck(plan, template_path) -> bytes:
         slide = clone_content_slide(prs, source_idx=0)
         remove_slide_number_fields(slide)
         render_heading(slide, page["title"])
-        if page["tables"]:
-            for tbl in page["tables"]:
-                render_table(slide, tbl)
-        else:
-            render_body(slide, page["body"])
+        render_content(slide, page["body"], page["tables"], page.get("images", []))
         fix_shape_ids(slide)
 
     # Remove the original template slides (still at the front).

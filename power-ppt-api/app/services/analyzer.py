@@ -5,7 +5,26 @@ runs even when they are not installed — a missing OCR stack degrades to a warn
 never a crash (roadmap: surface OCR failures, don't swallow them).
 """
 
-from ..schemas import Page, SlidePlan, Table
+import base64
+
+from ..schemas import Image, Page, SlidePlan, Table
+
+
+def _source_images(meta) -> list[Image]:
+    """Carry the slide's source images into the plan (base64) so the brand engine
+    re-places them in the content zone."""
+    out: list[Image] = []
+    for img in meta.get("image_shapes", []):
+        data = img.get("image_bytes")
+        if not data:
+            continue
+        out.append(
+            Image(
+                data=base64.b64encode(data).decode("ascii"),
+                content_type=img.get("content_type") or "image/png",
+            )
+        )
+    return out
 
 
 def _native_tables(meta) -> list[Table]:
@@ -64,6 +83,6 @@ def analyze_pptx(
                 except Exception as e:
                     warnings.append(f"Slide {idx + 1}: OCR failed ({e}).")
 
-        pages.append(Page(title=title, body=body, tables=tables))
+        pages.append(Page(title=title, body=body, tables=tables, images=_source_images(meta)))
 
     return SlidePlan(pages=pages), warnings

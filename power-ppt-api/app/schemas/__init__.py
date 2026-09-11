@@ -1,3 +1,3 @@
-from .models import AnalyzeResponse, Page, SlidePlan, Table
+from .models import AnalyzeResponse, Image, Page, SlidePlan, Table
 
-__all__ = ["Table", "Page", "SlidePlan", "AnalyzeResponse"]
+__all__ = ["Table", "Image", "Page", "SlidePlan", "AnalyzeResponse"]

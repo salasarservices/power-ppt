@@ -58,6 +58,40 @@ Note: dev machine is Windows + Python 3.14; keep Pillow ≥12.2 (global `pdfplum
 
 ---
 
+## ⇄ Direction settled (10 Sep 2026): rebuild engine IS the design + carry images
+
+Two turns of course-correction, now resolved. The user's confirmed "perfect" output
+is the existing **rebuild** engine (`brand_engine/build_deck` → `generated.pptx`):
+clean fixed-brand layout — heading Poppins SemiBold 20pt, ALL CAPS, blue `#1A3A8F` +
+green `#7AC143` split at the hyphen; body Poppins Regular 12pt slate `#4D4D4D`; content
+in the fixed zone. A restyle-in-place engine was briefly built then **shelved**
+(`app/restyle/` deleted) — it inherited the source deck's ugly default sizes/layout,
+which the user rejected.
+
+Confirmed plan: keep the rebuild engine as the design; carry **source images** into the
+content zone (auto-fit); editor is **content-only** (text, table cells, replace/remove
+image — no drag/resize v1); preview = **actual LibreOffice render**.
+
+- ✅ **A — engine fixed + images** (`brand_engine/`): content zone now **stacks**
+  body → tables → images top-down via a y-cursor (`content.py render_content`),
+  fixing bug #1 (body dropped when tables present) and #2 (tables overlapped).
+  Source images carried through the contract (`schemas.Image`, `Page.images` base64;
+  analyzer populates them; builder decodes + `render_image` auto-fits aspect-preserved
+  into the content zone). **17 tests pass** (design unchanged). Visual QA pending —
+  user checks `rebuilt-sample.pptx` in PowerPoint.
+- ⬜ **A2 — content overflow continuation** (user req 11 Sep): when body+tables+images
+  exceed the content zone, flow the remainder onto a new slide with the SAME title +
+  `(CONTD...)`. Extends pagination from body-only to tables (split by rows, repeat
+  header) and images (atomic; scale to one zone if larger). Overflow-aware y-cursor.
+- ⬜ **A3 — image-format table → native table** (user req 11 Sep): detect a table that
+  arrived as an image and OCR its structure into an editable `Table`. **Gated on R2
+  dependency: real table-structure OCR (Textract/Vision) wired + credentials in Cloud
+  Run — this is the bug #4 fix (init_* never called, cloud creds dead).** Tesseract
+  cannot recover table structure.
+- ⬜ B — LibreOffice render service (per-slide PNG preview).
+- ⬜ C — object-model/edit contract + endpoints (round-trip edits).
+- ⬜ D — carousel + inline-edit UI (one slide at a time, double-click to edit).
+
 ## Purpose
 
 PowerPPT reformats arbitrary PowerPoint decks into the authorised Salasar brand

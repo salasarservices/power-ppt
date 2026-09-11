@@ -11,10 +11,16 @@ class Table(BaseModel):
     rows: list[list[str]] = Field(default_factory=list)  # includes the header as rows[0]
 
 
+class Image(BaseModel):
+    data: str                       # base64-encoded image bytes
+    content_type: str = "image/png"
+
+
 class Page(BaseModel):
     title: str = ""          # "" -> the engine renders no heading
     body: str = ""           # paragraphs separated by "\n\n"
     tables: list[Table] = Field(default_factory=list)
+    images: list[Image] = Field(default_factory=list)   # source images, auto-fit in the content zone
 
 
 class SlidePlan(BaseModel):
