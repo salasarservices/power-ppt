@@ -1,3 +1,21 @@
-from .models import AnalyzeResponse, Image, Page, SlidePlan, Table
+from .models import (
+    AnalyzeResponse,
+    Deck,
+    Image,
+    Page,
+    Placement,
+    Slide,
+    SlidePlan,
+    Table,
+)
 
-__all__ = ["Table", "Image", "Page", "SlidePlan", "AnalyzeResponse"]
+__all__ = [
+    "Table",
+    "Image",
+    "Page",
+    "SlidePlan",
+    "AnalyzeResponse",
+    "Placement",
+    "Slide",
+    "Deck",
+]

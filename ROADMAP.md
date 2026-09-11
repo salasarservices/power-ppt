@@ -88,9 +88,19 @@ image — no drag/resize v1); preview = **actual LibreOffice render**.
   dependency: real table-structure OCR (Textract/Vision) wired + credentials in Cloud
   Run — this is the bug #4 fix (init_* never called, cloud creds dead).** Tesseract
   cannot recover table structure.
-- ⬜ B — LibreOffice render service (per-slide PNG preview).
-- ⬜ C — object-model/edit contract + endpoints (round-trip edits).
-- ⬜ D — carousel + inline-edit UI (one slide at a time, double-click to edit).
+- ❌ B — LibreOffice render service: **DROPPED**. Since the rebuild engine emits exact
+  placements, the editor preview is a placement-driven HTML/SVG canvas (faithful,
+  interactive, no heavy dep) — user-confirmed pipeline: *Placement JSON → SVG/HTML
+  preview → edits → Placement JSON → PPTX*.
+- ✅ **C1 — placement contract + endpoints** (backend): `schemas.Deck/Slide/Placement`
+  (positions in inches). `brand_engine.flow_deck(pages)->Deck` and `render_deck(deck)->
+  pptx`; `build_deck = flow_deck + render_deck`. New endpoints `POST /layout` (SlidePlan
+  ->Deck) and `POST /render` (Deck->pptx, WYSIWYG). Edit round-trip tested. **30 tests
+  pass.**
+- ⬜ D — carousel + inline-edit UI: SVG/HTML canvas from Placement JSON, one slide at a
+  time, arrows, double-click an object to edit (text/table cell/replace-remove image),
+  then POST /render to download. Replaces the current PlanReview UI.
+- ⬜ A3 — image-format table -> native table (gated on OCR provider choice).
 
 ## Purpose
 
