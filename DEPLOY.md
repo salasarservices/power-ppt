@@ -139,7 +139,7 @@ Gemini/AI Studio is not.**
 3. Point the service at Vertex + turn it on:
    ```bash
    gcloud run services update power-ppt --region asia-south1 --set-env-vars \
-     POWERPPT_VERTEX_PROJECT=power-ppt-486306,POWERPPT_VERTEX_LOCATION=us-central1,POWERPPT_VERTEX_MODEL=gemini-2.0-flash-001,POWERPPT_AI_EXTRACT_DEFAULT=true
+     POWERPPT_VERTEX_PROJECT=power-ppt-486306,POWERPPT_VERTEX_LOCATION=us-central1,POWERPPT_VERTEX_MODEL=gemini-2.5-flash,POWERPPT_AI_EXTRACT_DEFAULT=true
    ```
 
 Per-request override: `POST /analyze?use_ai=true` (or `false`). Billed per deck by

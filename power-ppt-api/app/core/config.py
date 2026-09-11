@@ -44,7 +44,7 @@ class Settings(BaseSettings):
     # COMPLIANCE: Vertex only (enterprise, no-train). Configured = vertex_project set.
     vertex_project: str | None = None
     vertex_location: str = "us-central1"
-    vertex_model: str = "gemini-2.0-flash-001"
+    vertex_model: str = "gemini-2.5-flash"
     ai_extract_default: bool = False    # run AI extraction unless the request overrides
     soffice_bin: str | None = None      # LibreOffice path override (else PATH)
 
