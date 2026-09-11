@@ -16,6 +16,8 @@ export default defineConfig({
       "/health": "http://localhost:8077",
       "/analyze": "http://localhost:8077",
       "/generate": "http://localhost:8077",
+      "/layout": "http://localhost:8077",
+      "/render": "http://localhost:8077",
     },
   },
 });

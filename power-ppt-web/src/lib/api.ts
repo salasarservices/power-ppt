@@ -6,10 +6,16 @@ export interface Table {
   rows: string[][]; // includes the header as rows[0]
 }
 
+export interface PptImage {
+  data: string; // base64-encoded image bytes
+  content_type: string;
+}
+
 export interface Page {
   title: string; // "" -> the engine renders no heading
   body: string; // paragraphs separated by "\n\n"
   tables: Table[];
+  images?: PptImage[];
 }
 
 export interface SlidePlan {
@@ -20,6 +26,30 @@ export interface AnalyzeResponse {
   slides: number;
   warnings: string[];
   plan: SlidePlan;
+}
+
+// Layout (Placement JSON) — positioned output of the flow engine, the editor's
+// round-trip contract. Positions are in inches on a 13.33 x 7.5 slide.
+export type PlacementKind = "body" | "table" | "image";
+
+export interface Placement {
+  kind: PlacementKind;
+  left: number;
+  top: number;
+  width: number;
+  height?: number | null;
+  text?: string | null;
+  table?: Table | null;
+  image?: PptImage | null;
+}
+
+export interface DeckSlide {
+  title: string;
+  placements: Placement[];
+}
+
+export interface Deck {
+  slides: DeckSlide[];
 }
 
 export interface Health {
@@ -60,3 +90,28 @@ export async function generateDeck(plan: SlidePlan): Promise<Blob> {
   });
   return data;
 }
+
+/** Flow a reviewed SlidePlan into a positioned Deck (Placement JSON). */
+export async function layoutPlan(plan: SlidePlan): Promise<Deck> {
+  const { data } = await client.post<Deck>("/layout", plan);
+  return data;
+}
+
+/** Render the edited Deck (Placement JSON) into the .pptx (WYSIWYG). */
+export async function renderDeck(deck: Deck): Promise<Blob> {
+  const { data } = await client.post<Blob>("/render", deck, {
+    responseType: "blob",
+  });
+  return data;
+}
+
+// Brand constants for the canvas (mirror app/brand_engine/geometry.py).
+export const SLIDE = { wIn: 13.33, hIn: 7.5 };
+export const HEADING = { left: 0.75, top: 0.55, width: 9.5, height: 0.9 };
+export const BRAND = {
+  blue: "#1A3A8F",
+  green: "#7AC143",
+  slate: "#4D4D4D",
+  headingPt: 20,
+  bodyPt: 12,
+};
