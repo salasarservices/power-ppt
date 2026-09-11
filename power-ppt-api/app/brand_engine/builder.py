@@ -1,16 +1,15 @@
 """
 Public entry point: turn a SlidePlan into a valid, on-brand PPTX against the
-bundled template. Handles body-overflow pagination and runs the integrity guards
-before returning bytes.
+bundled template. The flow planner packs each page's content across as many
+slides as it needs (overflow continuation); the integrity guards run before
+returning bytes.
 """
 
-import base64
 import io
 
-from ..paginator import split_by_paragraphs
-from . import geometry as g
-from .content import render_content
+from .content import render_blocks
 from .errors import BrandEngineError
+from .flow import flow_pages
 from .heading import render_heading
 from .integrity import verify_output
 from .template import (
@@ -20,49 +19,6 @@ from .template import (
     remove_slide,
     remove_slide_number_fields,
 )
-
-
-def _decode_images(page) -> list[bytes]:
-    """Decode a page's base64 images to raw bytes; skip any that don't decode."""
-    out: list[bytes] = []
-    for img in getattr(page, "images", None) or []:
-        try:
-            out.append(base64.b64decode(img.data))
-        except Exception:
-            pass
-    return out
-
-
-def _expand_pages(plan) -> list[dict]:
-    """
-    Flatten a SlidePlan into rendered pages, paginating long bodies. A page that
-    carries tables or images is kept whole (only plain-body pages paginate), so
-    body + tables + images always render together on one slide.
-    """
-    out: list[dict] = []
-    for page in plan.pages:
-        title = page.title or ""
-        tables = list(page.tables or [])
-        images = _decode_images(page)
-        body = page.body or ""
-
-        if tables or images:
-            out.append({"title": title, "body": body, "tables": tables, "images": images})
-            continue
-
-        chunks = (
-            split_by_paragraphs(body, g.DEFAULT_CHARS_PER_PAGE)
-            if body.strip()
-            else [""]
-        )
-        for i, chunk in enumerate(chunks):
-            if i == 0:
-                page_title = title
-            else:
-                page_title = (title + g.CONTINUATION_SUFFIX) if title else ""
-            out.append({"title": page_title, "body": chunk, "tables": [], "images": []})
-
-    return out
 
 
 def build_deck(plan, template_path) -> bytes:
@@ -75,15 +31,15 @@ def build_deck(plan, template_path) -> bytes:
         raise BrandEngineError("Brand template has no slides.")
 
     n_template = len(prs.slides)
-    rendered = _expand_pages(plan)
-    if not rendered:
+    specs = flow_pages(plan.pages)
+    if not specs:
         raise BrandEngineError("SlidePlan produced no pages.")
 
-    for page in rendered:
+    for spec in specs:
         slide = clone_content_slide(prs, source_idx=0)
         remove_slide_number_fields(slide)
-        render_heading(slide, page["title"])
-        render_content(slide, page["body"], page["tables"], page.get("images", []))
+        render_heading(slide, spec["title"])
+        render_blocks(slide, spec["blocks"])
         fix_shape_ids(slide)
 
     # Remove the original template slides (still at the front).
@@ -94,5 +50,5 @@ def build_deck(plan, template_path) -> bytes:
     prs.save(buf)
     data = buf.getvalue()
 
-    verify_output(data, rendered, template_path)
+    verify_output(data, specs, template_path)
     return data

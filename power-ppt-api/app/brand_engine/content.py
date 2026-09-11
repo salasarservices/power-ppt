@@ -123,22 +123,42 @@ def render_image(slide, image_bytes: bytes, top: float, zone_bottom: float) -> f
     return height
 
 
-def render_content(slide, body: str, tables, images) -> None:
-    """Stack body, then tables, then images down the content zone."""
+# ── height estimators (shared with the flow planner) ─────────────────────────
+def estimate_body_height_in(body: str) -> float:
+    return _estimate_body_height_in(body)
+
+
+def estimate_table_height_in(table) -> float:
+    return len(list(table.rows or [])) * g.TABLE_ROW_H
+
+
+def estimate_image_height_in(image_bytes: bytes) -> float:
+    """Height when the image is fit to the content width (aspect-preserved)."""
+    try:
+        with PILImage.open(io.BytesIO(image_bytes)) as im:
+            iw, ih = im.size
+    except Exception:
+        return 0.0
+    if not iw or not ih:
+        return 0.0
+    return g.BODY_WIDTH * (ih / iw)
+
+
+# ── block renderer (blocks are pre-sized to fit by the flow planner) ──────────
+def render_blocks(slide, blocks) -> None:
+    """Render a slide's flowed blocks top-to-bottom. Each block is
+    ("body", str) | ("table", Table) | ("image", bytes)."""
     y = g.BODY_TOP
-    if body and body.strip():
-        h = min(_estimate_body_height_in(body), g.BODY_BOTTOM - y)
-        render_body(slide, body, y, h)
-        y += h + g.CONTENT_GAP
-
-    for tbl in tables or []:
-        used = render_table(slide, tbl, y)
-        if used <= 0:
-            continue
-        y += used + g.CONTENT_GAP
-
-    for img in images or []:
-        used = render_image(slide, img, y, g.BODY_BOTTOM)
-        if used <= 0:
-            break                            # out of vertical room
-        y += used + g.CONTENT_GAP
+    for kind, payload in blocks:
+        if kind == "body":
+            h = min(_estimate_body_height_in(payload), g.BODY_BOTTOM - y)
+            render_body(slide, payload, y, h)
+            y += h + g.CONTENT_GAP
+        elif kind == "table":
+            used = render_table(slide, payload, y)
+            if used > 0:
+                y += used + g.CONTENT_GAP
+        elif kind == "image":
+            used = render_image(slide, payload, y, g.BODY_BOTTOM)
+            if used > 0:
+                y += used + g.CONTENT_GAP

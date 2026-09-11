@@ -51,6 +51,13 @@ def _template_image_hashes(template_path):
     }
 
 
+def _spec_body(spec) -> str:
+    """Reconstruct the body text a slide spec should contain from its blocks."""
+    return "\n\n".join(
+        payload for kind, payload in spec.get("blocks", []) if kind == "body"
+    )
+
+
 def verify_output(pptx_bytes: bytes, rendered_pages: list, template_path) -> None:
     """Raise BrandEngineError if the output deck is invalid or off-brand."""
     try:
@@ -86,7 +93,7 @@ def verify_output(pptx_bytes: bytes, rendered_pages: list, template_path) -> Non
             if first_word and first_word not in text:
                 raise BrandEngineError(f"Slide {i} is missing its title text")
         else:
-            body = (page.get("body") or "").strip()
+            body = _spec_body(page).strip()
             if body:
                 token = body.split()[0].upper()
                 if token and token not in text:
